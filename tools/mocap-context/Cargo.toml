@@ -1,0 +1,21 @@
+[package]
+name = "mocap-context"
+version = "0.1.0"
+edition = "2024"
+authors = ["Salahad"]
+description = "Interactive TUI context manager for ESP32 IMU MoCap System"
+
+[dependencies]
+crossterm = "0.28"
+proc-macro2 = "1.0"
+quote = "1.0"
+ratatui = "0.29"
+serde = { version = "1.0", features = ["derive"] }
+syn = { version = "2.0", features = ["full", "parsing", "extra-traits"] }
+toml = "0.8"
+walkdir = "2.5"
+
+[workspace]
+
+[lints.rust]
+unsafe_code = "forbid"

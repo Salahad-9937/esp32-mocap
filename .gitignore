@@ -1,0 +1,38 @@
+# Rust & Cargo build artifacts
+target/
+**/target/
+**/*.rs.bk
+*.lock
+
+# Documentation build distribution
+docs/dist/
+dist/
+*.pdf
+
+# Context tool & LLM workflow artifacts
+project_context.txt
+supplement_*.txt
+changes.txt
+.context_state.toml
+**/.context_state.toml
+**/.context_state.*
+logs/
+*.log
+
+# Firmware build artifacts (Arduino / PlatformIO / ESP-IDF)
+.pio/
+firmware/build/
+*.bin
+*.elf
+*.hex
+
+# IDE & Editor temporary files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Operating System files
+.DS_Store
+Thumbs.db

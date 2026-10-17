@@ -1,0 +1,32 @@
+# Configuration for MoCap context manager (mocap-context)
+
+[general]
+output_file = "project_context.txt"
+supplement_prefix = "supplement_"
+
+ignore_patterns = [
+    "target",
+    ".git",
+    "logs",
+    "dist",
+    "storage",
+    "mutants.out",
+    ".idea",
+    ".vscode",
+    "*.lock",
+    "Cargo.lock",
+    "changes.txt",
+    ".context_state.toml",
+    ".context_state.*",
+    "tools/mocap-context/.context_state.toml",
+    "*.snap",
+    "*.delta",
+    "*.pdf",
+    "*.png",
+    "*.jpg",
+    "*.ico",
+    "*.ttf",
+    "*.otf",
+    "project_context.txt",
+    "supplement_*.txt",
+]
