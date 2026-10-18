@@ -1,0 +1,15 @@
+[package]
+name = "mocap-core"
+version = "0.1.0"
+edition = "2024"
+authors = ["Salahad"]
+description = "Headless data ingestion, calibration and sensor fusion engine for ESP32 MoCap"
+
+[dependencies]
+serialport = "4.5"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+
+[lib]
+name = "mocap_core"
+path = "src/lib.rs"
