@@ -7,7 +7,7 @@
 /// Вычисляет контрольную сумму CRC-16-CCITT для массива байтов.
 uint16_t crc16_ccitt(const uint8_t *data, size_t length);
 
-/// Формирует полный бинарный пакет кадра телеметрии.
+/// Формирует полный бинарный пакет кадра телеметрии (14 байт на датчик).
 size_t build_binary_frame(
     uint16_t sequence_id,
     uint8_t node_count,

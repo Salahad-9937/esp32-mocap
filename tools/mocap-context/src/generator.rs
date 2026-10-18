@@ -1,4 +1,4 @@
-//! Сборка и генерация файлов project_context.txt, changes.txt и срезов MoCap-проекта.
+//! Сборка и генерация файлов project_context.txt, changes.txt и срезов проекта.
 
 use crate::config::{ContextConfig, DetailLevel, ProjectComponent};
 use crate::extractor::{extract_rust_contracts, extract_rust_tests_only, strip_rust_tests};

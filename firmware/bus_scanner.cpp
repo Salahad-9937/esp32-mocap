@@ -5,14 +5,12 @@
 uint8_t bus_scan_and_init(ActiveNode *out_nodes, uint8_t max_capacity) {
     uint8_t active_count = 0;
 
-    // Сначала глушим все возможные мультиплексоры на шине
     for (uint8_t addr = MUX_ADDR_BASE; addr < MUX_ADDR_BASE + MUX_COUNT_MAX; addr++) {
         if (mux_probe(addr)) {
             mux_disable_all(addr);
         }
     }
 
-    // Сканирование адресного пространства мультиплексоров 0x70 .. 0x77
     for (uint8_t m = 0; m < MUX_COUNT_MAX; m++) {
         uint8_t mux_addr = MUX_ADDR_BASE + m;
 
@@ -20,7 +18,6 @@ uint8_t bus_scan_and_init(ActiveNode *out_nodes, uint8_t max_capacity) {
             continue;
         }
 
-        // Обход подканалов 0 .. 7 найденного мультиплексора
         for (uint8_t ch = 0; ch < CHANNELS_PER_MUX; ch++) {
             if (active_count >= max_capacity) {
                 break;
@@ -82,7 +79,7 @@ void print_startup_diagnostics(const ActiveNode *nodes, uint8_t count) {
 
     Serial.println("--------------------------------------------------------------");
     Serial.printf("ИТОГО НАЙДЕНО: Мультиплексоров: %d | Активных BMI160: %d\n", mux_found, count);
-    Serial.printf("РАЗМЕР БИНАРНОГО КАДРА: %d байт\n", 7 + count * 12);
+    Serial.printf("РАЗМЕР БИНАРНОГО КАДРА: %d байт\n", 7 + count * NODE_PAYLOAD_SIZE);
     Serial.println("==============================================================");
     Serial.println();
 }

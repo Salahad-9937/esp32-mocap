@@ -8,7 +8,7 @@ uint16_t crc16_ccitt(const uint8_t *data, size_t length) {
             if (crc & 0x8000) {
                 crc = (crc << 1) ^ 0x1021;
             } else {
-                crc = crc << 1;
+                crc <<= 1;
             }
         }
     }
@@ -21,26 +21,26 @@ size_t build_binary_frame(
     const uint8_t *raw_payload,
     uint8_t *out_frame_buffer
 ) {
-    size_t payload_len = (size_t)node_count * 12;
+    size_t payload_len = (size_t)node_count * NODE_PAYLOAD_SIZE;
 
-    // 1. Преамбула синхронизации (2 байта)
+    // 1. Преамбула синхронизации (0xAA 0x55)
     out_frame_buffer[0] = FRAME_PREAMBLE_0;
     out_frame_buffer[1] = FRAME_PREAMBLE_1;
 
-    // 2. Инкрементный счетчик пакетов (2 байта, Little-Endian)
+    // 2. Инкрементный счетчик пакетов (Little-Endian)
     out_frame_buffer[2] = (uint8_t)(sequence_id & 0xFF);
     out_frame_buffer[3] = (uint8_t)((sequence_id >> 8) & 0xFF);
 
-    // 3. Количество переданных узлов (1 байт)
+    // 3. Количество переданных узлов
     out_frame_buffer[4] = node_count;
 
-    // 4. Полезная нагрузка (N * 12 байт)
+    // 4. Полезная нагрузка (N * 14 байт)
     if (payload_len > 0 && raw_payload != nullptr) {
         memcpy(&out_frame_buffer[5], raw_payload, payload_len);
     }
 
-    // 5. Контрольная сумма CRC-16 (по полям: счетчик + кол-во + полезная нагрузка)
-    size_t crc_calc_len = 3 + payload_len; // Байты 2, 3, 4 + payload
+    // 5. Контрольная сумма CRC-16
+    size_t crc_calc_len = 3 + payload_len;
     uint16_t checksum = crc16_ccitt(&out_frame_buffer[2], crc_calc_len);
 
     size_t crc_offset = 5 + payload_len;

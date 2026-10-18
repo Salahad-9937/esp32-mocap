@@ -16,11 +16,18 @@ pub fn default_components() -> Vec<ProjectComponent> {
             kind: ComponentKind::Directory,
         },
         ProjectComponent {
-            name: "software".to_string(),
-            path: "software".to_string(),
-            description: "ПК-приемник (чтение COM-порта, парсинг кадров, фильтрация)".to_string(),
+            name: "src".to_string(),
+            path: "src".to_string(),
+            description: "Эталонное приложение на ПК (UI, 3D-вьюпорт, маппинг)".to_string(),
             level: DetailLevel::Full,
             kind: ComponentKind::Directory,
+        },
+        ProjectComponent {
+            name: "mocap-core".to_string(),
+            path: "crates/mocap-core".to_string(),
+            description: "Headless-библиотека Rust (парсинг кадров, CRC, Sensor Fusion)".to_string(),
+            level: DetailLevel::Full,
+            kind: ComponentKind::CodeCrate,
         },
         ProjectComponent {
             name: "docs".to_string(),

@@ -15,7 +15,5 @@ syn = { version = "2.0", features = ["full", "parsing", "extra-traits"] }
 toml = "0.8"
 walkdir = "2.5"
 
-[workspace]
-
 [lints.rust]
 unsafe_code = "forbid"
