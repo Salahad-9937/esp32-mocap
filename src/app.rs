@@ -416,17 +416,31 @@ impl eframe::App for MocapApp {
                     });
                 });
 
-                ui.add_space(2.0);
+                ui.add_space(4.0);
 
                 // Управление подключением
-                ui.horizontal(|ui| {
+                let conn_row_id = ui.id().with("conn_row_width");
+                let conn_row_w = ui.data(|d| d.get_temp::<f32>(conn_row_id)).unwrap_or(270.0);
+                let conn_offset = (ui.available_width() - conn_row_w).max(0.0) * 0.5;
+
+                let conn_resp = ui.horizontal(|ui| {
+                    ui.add_space(conn_offset);
+                    let start_x = ui.cursor().min.x;
+
                     let btn_text = match self.connection_status {
                         ConnectionStatus::Connected => "Отключиться",
-                        ConnectionStatus::Connecting => "Подключиться",
-                        _ => "🔌 Подключиться",
+                        _ => "Подключиться",
                     };
 
-                    if ui.button(RichText::new(btn_text).color(Color32::WHITE).strong()).clicked() {
+                    let btn = egui::Button::new(
+                        RichText::new(btn_text)
+                            .size(13.5)
+                            .color(Color32::WHITE)
+                            .strong(),
+                    )
+                    .min_size(egui::vec2(125.0, 28.0));
+
+                    if ui.add(btn).clicked() {
                         match self.connection_status {
                             ConnectionStatus::Connected | ConnectionStatus::Connecting => {
                                 self.shared.user_wants_connected.store(false, Ordering::SeqCst);
@@ -440,21 +454,51 @@ impl eframe::App for MocapApp {
                         }
                     }
 
+                    ui.add_space(10.0);
+
                     let mut auto_rec = self.shared.auto_reconnect.load(Ordering::Relaxed);
-                    if ui.checkbox(&mut auto_rec, "Авто-реконнект").changed() {
+                    if ui.checkbox(&mut auto_rec, RichText::new("Авто-реконнект").size(13.5)).changed() {
                         self.shared.auto_reconnect.store(auto_rec, Ordering::SeqCst);
                     }
-                });
 
-                ui.add_space(2.0);
+                    ui.min_rect().max.x - start_x
+                });
+                ui.data_mut(|d| d.insert_temp(conn_row_id, conn_resp.inner));
+
+                ui.add_space(4.0);
 
                 // Переключатель вкладок
-                ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.active_tab, ActiveTab::Topology, "🖧 Топология I2C");
-                    ui.selectable_value(&mut self.active_tab, ActiveTab::Mapper, "🦴 Маппинг");
-                    ui.selectable_value(&mut self.active_tab, ActiveTab::Calibration, "⚖ Калибровка");
-                });
+                let tabs_row_id = ui.id().with("tabs_row_width");
+                let tabs_row_w = ui.data(|d| d.get_temp::<f32>(tabs_row_id)).unwrap_or(342.0);
+                let tabs_offset = (ui.available_width() - tabs_row_w).max(0.0) * 0.5;
 
+                let mut clicked_tab = None;
+                let tabs_resp = ui.horizontal(|ui| {
+                    ui.add_space(tabs_offset);
+                    let start_x = ui.cursor().min.x;
+
+                    for (tab, text) in [
+                        (ActiveTab::Topology, "Топология"),
+                        (ActiveTab::Mapper, "Маппинг"),
+                        (ActiveTab::Calibration, "Калибровка"),
+                    ] {
+                        let btn = egui::Button::new(RichText::new(text).size(13.5).strong())
+                            .selected(self.active_tab == tab)
+                            .min_size(egui::vec2(108.0, 28.0));
+                        if ui.add(btn).clicked() {
+                            clicked_tab = Some(tab);
+                        }
+                    }
+
+                    ui.min_rect().max.x - start_x
+                });
+                ui.data_mut(|d| d.insert_temp(tabs_row_id, tabs_resp.inner));
+
+                if let Some(tab) = clicked_tab {
+                    self.active_tab = tab;
+                }
+
+                ui.add_space(2.0);
                 ui.separator();
 
                 // Содержимое активной вкладки

@@ -10,7 +10,7 @@ pub struct TopologyView;
 impl TopologyView {
     pub fn show(&mut self, ui: &mut Ui, shared: &SharedStateHandle, endpoint: &str) {
         ui.heading("Топология оборудования I2C");
-        ui.label("Автосканирование шины: 8 коммутаторов PCA9548A × 8 подканалов (0x68)");
+        ui.label("Автосканирование шины:\n8 коммутаторов PCA9548A × 8 подканалов (0x68)");
         ui.add_space(4.0);
 
         let active_nodes = shared.nodes.lock().map(|g| g.clone()).unwrap_or_default();
@@ -18,7 +18,12 @@ impl TopologyView {
         let frame_size = 7 + total_active * 12;
         let fps = shared.calculated_fps.lock().map(|f| *f).unwrap_or(0.0);
 
+        let matrix_w = ui
+            .data(|d| d.get_temp::<f32>(egui::Id::new("i2c_matrix_group_width")))
+            .unwrap_or(340.0);
+
         ui.group(|ui| {
+            ui.set_width(matrix_w);
             ui.horizontal(|ui| {
                 ui.label("Эндпоинт:");
                 ui.label(RichText::new(endpoint).monospace().strong());
@@ -40,7 +45,7 @@ impl TopologyView {
         // Исходный полноразмерный формат ячеек: все 8 каналов (C0..C7) гарантированно умещаются при ширине панели 380px
         let cell_size = egui::vec2(34.0_f32, 26.0_f32);
 
-        ui.group(|ui| {
+        let matrix_resp = ui.group(|ui| {
             egui::Grid::new("i2c_topology_matrix")
                 .spacing([4.0_f32, 4.0_f32])
                 .show(ui, |ui| {
@@ -92,6 +97,8 @@ impl TopologyView {
                         ui.end_row();
                     }
                 });
+            ui.min_rect().width()
         });
+        ui.data_mut(|d| d.insert_temp(egui::Id::new("i2c_matrix_group_width"), matrix_resp.inner));
     }
 }
