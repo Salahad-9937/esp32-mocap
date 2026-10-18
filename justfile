@@ -1,4 +1,8 @@
-default: doc
+default: run
+
+# Run MoCap UI application
+run:
+	cargo run
 
 # Run interactive TUI context manager for MoCap project
 ctx:
