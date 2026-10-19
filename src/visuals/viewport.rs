@@ -20,10 +20,11 @@ pub struct OrbitalCamera {
 impl Default for OrbitalCamera {
     fn default() -> Self {
         Self {
-            target: [0.0, 0.75, 0.0],
+            target: [0.0, 0.88, 0.0],
             distance: 2.6,
-            yaw: 0.65,
-            pitch: 0.25,
+            // Человек смотрит в +Z, поэтому камера с yaw ≈ π видит его спереди.
+            yaw: std::f32::consts::PI - 0.55,
+            pitch: -0.10,
             fov_scale: 1.0,
         }
     }
@@ -57,6 +58,12 @@ impl OrbitalCamera {
     /// Преобразует трехмерную мировую координату в двумерную координату холста egui.
     #[must_use]
     pub fn project(&self, p: [f32; 3], rect: Rect) -> Option<Pos2> {
+        self.project_depth(p, rect).map(|(pos, _)| pos)
+    }
+
+    /// Проекция вместе с глубиной точки вдоль взгляда камеры (для сортировки по глубине).
+    #[must_use]
+    pub fn project_depth(&self, p: [f32; 3], rect: Rect) -> Option<(Pos2, f32)> {
         let dx = p[0] - self.target[0];
         let dy = p[1] - self.target[1];
         let dz = p[2] - self.target[2];
@@ -78,10 +85,25 @@ impl OrbitalCamera {
             return None; // Точка за плоскостью отсечения камеры
         }
 
-        let scale = (rect.height() * 0.88 * self.fov_scale) / depth;
+        let scale = self.pixels_per_meter_at_unit_depth(rect) / depth;
         let screen_x = rect.center().x + x1 * scale;
         let screen_y = rect.center().y - y2 * scale;
 
-        Some(Pos2::new(screen_x, screen_y))
+        Some((Pos2::new(screen_x, screen_y), depth))
+    }
+
+    /// Масштаб проекции: пикселей на метр при глубине 1 м (на глубине `d` — делить на `d`).
+    #[must_use]
+    pub fn pixels_per_meter_at_unit_depth(&self, rect: Rect) -> f32 {
+        rect.height() * 0.88 * self.fov_scale
+    }
+
+    /// Единичный вектор направления взгляда камеры в мировых координатах.
+    /// Поверхность смотрит на камеру, если `dot(normal, forward) < 0`.
+    #[must_use]
+    pub fn forward(&self) -> [f32; 3] {
+        let (sy, cy) = self.yaw.sin_cos();
+        let (sp, cp) = self.pitch.sin_cos();
+        [cp * sy, sp, cp * cy]
     }
 }

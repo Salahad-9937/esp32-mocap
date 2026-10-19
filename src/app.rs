@@ -340,7 +340,7 @@ impl eframe::App for MocapApp {
             ..Visuals::dark()
         });
 
-        if let Ok(mut inst_guard) = self.shared.last_frame_instant.lock() {
+        if let Ok(inst_guard) = self.shared.last_frame_instant.lock() {
             if let Some(instant) = *inst_guard {
                 if instant.elapsed() > Duration::from_millis(500) {
                     if let Ok(mut nodes_guard) = self.shared.nodes.lock() {
@@ -395,7 +395,7 @@ impl eframe::App for MocapApp {
             .frame(Frame {
                 inner_margin: Margin::same(8.0),
                 fill: bg_color,
-                stroke: Stroke::new(1.0, Color32::from_rgb(38, 46, 62)),
+                stroke: Stroke::new(1.0_f32, Color32::from_rgb(38, 46, 62)),
                 ..Default::default()
             })
             .show(ctx, |ui| {

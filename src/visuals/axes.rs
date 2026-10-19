@@ -1,4 +1,4 @@
-//! Отрисовка взаимно перпендикулярных базисных осей датчика (Axes Gizmo).
+//! Оси ориентации активных датчиков.
 
 use super::viewport::OrbitalCamera;
 use egui::{Color32, Painter, Rect, Stroke};
@@ -24,7 +24,8 @@ pub fn rotate_vector_by_quat(v: [f32; 3], q: [f32; 4]) -> [f32; 3] {
     ]
 }
 
-/// Отрисовывает ориентированный базис осей (X-красный, Y-зеленый, Z-синий) в точке узла.
+/// Ориентированный базис (X — красный, Y — зелёный, Z — синий) из центра платы.
+/// `opacity` (0..1) — для приглушения датчиков на обратной стороне тела.
 pub fn draw_axes_gizmo(
     painter: &Painter,
     camera: &OrbitalCamera,
@@ -32,36 +33,22 @@ pub fn draw_axes_gizmo(
     position: [f32; 3],
     quat: [f32; 4],
     axis_length: f32,
+    opacity: f32,
 ) {
     let Some(center_2d) = camera.project(position, rect) else {
         return;
     };
-
-    let local_x = [axis_length, 0.0, 0.0];
-    let local_y = [0.0, axis_length, 0.0];
-    let local_z = [0.0, 0.0, axis_length];
-
-    let rot_x = rotate_vector_by_quat(local_x, quat);
-    let rot_y = rotate_vector_by_quat(local_y, quat);
-    let rot_z = rotate_vector_by_quat(local_z, quat);
-
-    let tip_x = [position[0] + rot_x[0], position[1] + rot_x[1], position[2] + rot_x[2]];
-    let tip_y = [position[0] + rot_y[0], position[1] + rot_y[1], position[2] + rot_y[2]];
-    let tip_z = [position[0] + rot_z[0], position[1] + rot_z[1], position[2] + rot_z[2]];
-
-    let stroke_x = Stroke::new(2.8_f32, Color32::from_rgb(240, 50, 50));
-    let stroke_y = Stroke::new(2.8_f32, Color32::from_rgb(50, 220, 70));
-    let stroke_z = Stroke::new(2.8_f32, Color32::from_rgb(45, 130, 255));
-
-    if let Some(p_x) = camera.project(tip_x, rect) {
-        painter.line_segment([center_2d, p_x], stroke_x);
+    let width = if axis_length < 0.04 { 1.6_f32 } else { 2.4_f32 };
+    let axes = [
+        ([axis_length, 0.0, 0.0], Color32::from_rgb(240, 50, 50)),
+        ([0.0, axis_length, 0.0], Color32::from_rgb(50, 220, 70)),
+        ([0.0, 0.0, axis_length], Color32::from_rgb(45, 130, 255)),
+    ];
+    for (local, color) in axes {
+        let r = rotate_vector_by_quat(local, quat);
+        let tip = [position[0] + r[0], position[1] + r[1], position[2] + r[2]];
+        if let Some(p) = camera.project(tip, rect) {
+            painter.line_segment([center_2d, p], Stroke::new(width, color.gamma_multiply(opacity)));
+        }
     }
-    if let Some(p_y) = camera.project(tip_y, rect) {
-        painter.line_segment([center_2d, p_y], stroke_y);
-    }
-    if let Some(p_z) = camera.project(tip_z, rect) {
-        painter.line_segment([center_2d, p_z], stroke_z);
-    }
-
-    painter.circle_filled(center_2d, 3.0_f32, Color32::WHITE);
 }

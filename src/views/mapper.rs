@@ -8,12 +8,39 @@ use std::fs;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-pub const TARGET_BONES: [&str; 17] = [
-    "Pelvis", "Spine", "Thorax", "Neck", "Head",
-    "LeftShoulder", "LeftUpperArm", "LeftForearm",
-    "RightShoulder", "RightUpperArm", "RightForearm",
-    "LeftThigh", "LeftShin", "LeftFoot",
-    "RightThigh", "RightShin", "RightFoot",
+/// Полный перечень 64 целевых сегментов тела для распределенного костюма захвата движений.
+pub const TARGET_BONES: [&str; 64] = [
+    // Голова и шея (4)
+    "HeadTop", "HeadFront", "HeadOcciput", "Neck",
+    // Торс и позвоночник (8)
+    "ThoraxUpper", "Thorax", "SpineCervical", "SpineThoracic",
+    "Spine", "Pelvis", "PelvisLeft", "PelvisRight",
+    // Плечевой пояс (2)
+    "LeftShoulder", "RightShoulder",
+    // Левая рука (4)
+    "LeftUpperArm", "LeftUpperArmLower", "LeftForearm", "LeftForearmWrist",
+    // Правая рука (4)
+    "RightUpperArm", "RightUpperArmLower", "RightForearm", "RightForearmWrist",
+    // Левая кисть и пальцы (13)
+    "LeftHand", "LeftThumbProximal", "LeftThumbDistal",
+    "LeftIndexProximal", "LeftIndexDistal", "LeftIndexTip",
+    "LeftMiddleProximal", "LeftMiddleDistal", "LeftMiddleTip",
+    "LeftRingProximal", "LeftRingDistal",
+    "LeftPinkyProximal", "LeftPinkyDistal",
+    // Правая кисть и пальцы (13)
+    "RightHand", "RightThumbProximal", "RightThumbDistal",
+    "RightIndexProximal", "RightIndexDistal", "RightIndexTip",
+    "RightMiddleProximal", "RightMiddleDistal", "RightMiddleTip",
+    "RightRingProximal", "RightRingDistal",
+    "RightPinkyProximal", "RightPinkyDistal",
+    // Левая нога (8)
+    "LeftThigh", "LeftThighLower", "LeftKneeSensor",
+    "LeftShin", "LeftShinLower", "LeftAnkleSensor",
+    "LeftFoot", "LeftToe",
+    // Правая нога (8)
+    "RightThigh", "RightThighLower", "RightKneeSensor",
+    "RightShin", "RightShinLower", "RightAnkleSensor",
+    "RightFoot", "RightToe",
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -51,8 +78,8 @@ impl MapperView {
     }
 
     pub fn show(&mut self, ui: &mut Ui, shared: &SharedStateHandle, profile_path: &Path) {
-        ui.heading("Маппинг датчиков на скелет");
-        ui.label("Назначьте датчик через меню выбора или используйте накопление движения.");
+        ui.heading("Маппинг датчиков на скелет (64 узла)");
+        ui.label("Назначьте физический канал коммутатора на сегмент скелета.");
         ui.add_space(4.0);
 
         let nodes = shared.nodes.lock().map(|g| g.clone()).unwrap_or_default();
@@ -110,7 +137,7 @@ impl MapperView {
                     .show(ui, |ui| {
                         ui.label(RichText::new("Канал").strong());
                         ui.label(RichText::new("Активность").strong());
-                        ui.label(RichText::new("Назначенная кость").strong());
+                        ui.label(RichText::new("Назначенный сегмент").strong());
                         ui.label("Действие");
                         ui.end_row();
 
@@ -126,12 +153,14 @@ impl MapperView {
                             ui.label(RichText::new(&current_bone).color(if current_bone == "Не назначен" { Color32::GRAY } else { Color32::LIGHT_BLUE }));
 
                             ui.menu_button("Выбрать ▼", |ui| {
-                                for &bone in &TARGET_BONES {
-                                    if ui.button(bone).clicked() {
-                                        self.profile.mappings.insert(key.clone(), bone.to_string());
-                                        ui.close_menu();
+                                egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
+                                    for &bone in &TARGET_BONES {
+                                        if ui.button(bone).clicked() {
+                                            self.profile.mappings.insert(key.clone(), bone.to_string());
+                                            ui.close_menu();
+                                        }
                                     }
-                                }
+                                });
                                 ui.separator();
                                 if ui.button("Снять привязку").clicked() {
                                     self.profile.mappings.remove(&key);
@@ -146,37 +175,39 @@ impl MapperView {
         });
 
         ui.add_space(8.0);
-        ui.heading("Интерактивный список сегментов тела");
+        ui.heading("Реестр 64 сегментов скелета");
 
         ui.group(|ui| {
-            egui::Grid::new("bones_assignment_grid")
-                .num_columns(3)
-                .spacing([8.0, 5.0])
-                .show(ui, |ui| {
-                    for &bone in &TARGET_BONES {
-                        let assigned_key = self.profile.mappings.iter().find_map(|(k, v)| if v == bone { Some(k) } else { None });
+            egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+                egui::Grid::new("bones_assignment_grid")
+                    .num_columns(3)
+                    .spacing([8.0, 4.0])
+                    .show(ui, |ui| {
+                        for &bone in &TARGET_BONES {
+                            let assigned_key = self.profile.mappings.iter().find_map(|(k, v)| if v == bone { Some(k) } else { None });
 
-                        ui.label(RichText::new(bone).strong());
+                            ui.label(RichText::new(bone).monospace());
 
-                        if let Some(key) = assigned_key {
-                            ui.colored_label(Color32::GREEN, format!("[{key}]"));
-                        } else {
-                            ui.colored_label(Color32::GRAY, "—");
-                        }
-
-                        if self.detecting_for_bone.is_none() {
-                            if ui.button("🎯 Засечь").clicked() {
-                                self.detecting_for_bone = Some(bone.to_string());
-                                self.detection_start = Some(Instant::now());
-                                self.accumulated_energies.clear();
+                            if let Some(key) = assigned_key {
+                                ui.colored_label(Color32::GREEN, format!("[{key}]"));
+                            } else {
+                                ui.colored_label(Color32::GRAY, "—");
                             }
-                        } else {
-                            ui.label("");
-                        }
 
-                        ui.end_row();
-                    }
-                });
+                            if self.detecting_for_bone.is_none() {
+                                if ui.button("🎯 Засечь").clicked() {
+                                    self.detecting_for_bone = Some(bone.to_string());
+                                    self.detection_start = Some(Instant::now());
+                                    self.accumulated_energies.clear();
+                                }
+                            } else {
+                                ui.label("");
+                            }
+
+                            ui.end_row();
+                        }
+                    });
+            });
         });
 
         ui.add_space(8.0);
