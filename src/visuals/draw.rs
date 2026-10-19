@@ -1,213 +1,627 @@
-//! Рисование скелета: все примитивы проецируются, сортируются по глубине
-//! (от дальних к ближним) и выводятся одним списком.
+//! Аппаратный 3D-рендерер манекена: параметрические сфероцилиндры (Three.js Lathe-модель)
+//! со сферическими куполами, строгий CCW-обход, аппаратный Z-буфер и чипы 64 датчиков.
 
-use super::axes::draw_axes_gizmo;
+use super::axes::rotate_vector_by_quat;
 use super::skeleton::{Joint, Prim, SensorSite, Skeleton, Tone};
-use super::vec3::{add, cross, dot, madd, norm, scale, V3};
+use super::vec3::{add, cross, dot, madd, norm, scale, sub, V3};
 use super::viewport::OrbitalCamera;
-use egui::{Color32, Painter, Pos2, Rect, Shape, Stroke, Vec2};
+use eframe::egui_glow;
+use eframe::glow::{self, HasContext};
+use egui::{Color32, Painter, Rect};
+use std::sync::{Arc, Mutex, OnceLock};
 
-fn mul(c: Color32, k: f32) -> Color32 {
-    let f = |v: u8| (f32::from(v) * k).clamp(0.0, 255.0) as u8;
-    Color32::from_rgb(f(c.r()), f(c.g()), f(c.b()))
+/// Формат 3D-вершины для аппаратного конвейера OpenGL (stride = 44 байта).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GlVertex {
+    pub pos: [f32; 3],
+    pub normal: [f32; 3],
+    pub color: [f32; 4],
+    pub ao: f32,
 }
 
-fn tone_color(t: Tone) -> Color32 {
-    match t {
-        Tone::Cortical | Tone::Trabecular | Tone::Plate => Color32::from_rgb(172, 179, 193),
-        Tone::Cartilage => Color32::from_rgb(120, 160, 190),
-        Tone::Tooth => Color32::from_rgb(248, 248, 242),
-        Tone::Dark => Color32::from_rgb(22, 24, 32),
+const VERTEX_SHADER_SRC: &str = r#"
+in vec3 a_pos;
+in vec3 a_normal;
+in vec4 a_color;
+in float a_ao;
+
+uniform mat4 u_mvp;
+uniform vec3 u_light_key;
+uniform vec3 u_light_fill;
+uniform vec3 u_eye_pos;
+uniform int u_is_line;
+
+out vec4 v_color;
+
+void main() {
+    gl_Position = u_mvp * vec4(a_pos, 1.0);
+
+    if (u_is_line == 1) {
+        v_color = a_color;
+    } else {
+        vec3 n = normalize(a_normal);
+        vec3 lk = normalize(u_light_key);
+        vec3 lf = normalize(u_light_fill);
+
+        // Half-Lambert для мягкого рассеяния пластика
+        float n_dot_k = clamp(dot(n, lk) * 0.5 + 0.5, 0.0, 1.0);
+        float key = n_dot_k * n_dot_k;
+
+        float fill = max(dot(n, lf), 0.0) * 0.32;
+
+        vec3 eye_dir = normalize(u_eye_pos - a_pos);
+        float n_dot_v = clamp(1.0 - abs(dot(n, eye_dir)), 0.0, 1.0);
+        float rim = pow(n_dot_v, 3.0) * 0.28;
+
+        vec3 warm = vec3(1.10, 1.06, 0.96);
+        vec3 cool = vec3(0.82, 0.90, 1.12);
+        vec3 base = a_color.rgb;
+        vec3 blended = base * mix(cool, warm, key);
+
+        float ambient = 0.24;
+        vec3 lit = (blended * (ambient + key * 0.68 + fill) * a_ao) + vec3(rim);
+
+        v_color = vec4(clamp(lit, 0.0, 1.0), a_color.a);
     }
 }
+"#;
 
-struct View<'a> {
-    cam: &'a OrbitalCamera,
-    rect: Rect,
-    k: f32,
-    fwd: V3,
+const FRAGMENT_SHADER_SRC: &str = r#"
+in vec4 v_color;
+out vec4 FragColor;
+
+void main() {
+    FragColor = v_color;
+}
+"#;
+
+unsafe fn compile_shader(
+    gl: &glow::Context,
+    shader_type: u32,
+    extra_header: &str,
+    source: &str,
+) -> Result<glow::Shader, String> {
+    let shader = gl.create_shader(shader_type)?;
+    let version = egui_glow::ShaderVersion::get(gl);
+    let full_src = format!("{}\n{}{}", version.version_declaration(), extra_header, source);
+    gl.shader_source(shader, &full_src);
+    gl.compile_shader(shader);
+    if !gl.get_shader_compile_status(shader) {
+        let log = gl.get_shader_info_log(shader);
+        gl.delete_shader(shader);
+        return Err(log);
+    }
+    Ok(shader)
 }
 
-type Items = Vec<(f32, Shape)>;
+unsafe fn create_program(gl: &glow::Context) -> Result<glow::Program, String> {
+    let shader_version = egui_glow::ShaderVersion::get(gl);
+    let fs_header = if shader_version.is_embedded() {
+        "precision mediump float;\n"
+    } else {
+        ""
+    };
 
-/// Тело рисуется тремя слоями без сортировки: общий контур, общая заливка одним цветом
-/// (без бликов). Поэтому перекрывающиеся части сливаются в единую фигуру.
-struct Passes {
-    outline: Vec<Shape>,
-    fill: Vec<Shape>,
+    let vs = compile_shader(gl, glow::VERTEX_SHADER, "", VERTEX_SHADER_SRC)?;
+    let fs = compile_shader(gl, glow::FRAGMENT_SHADER, fs_header, FRAGMENT_SHADER_SRC)?;
+    let program = gl.create_program()?;
+    gl.attach_shader(program, vs);
+    gl.attach_shader(program, fs);
+
+    // Явная привязка атрибутов для совместимости со всеми версиями GLSL
+    gl.bind_attrib_location(program, 0, "a_pos");
+    gl.bind_attrib_location(program, 1, "a_normal");
+    gl.bind_attrib_location(program, 2, "a_color");
+    gl.bind_attrib_location(program, 3, "a_ao");
+
+    gl.link_program(program);
+    gl.delete_shader(vs);
+    gl.delete_shader(fs);
+    if !gl.get_program_link_status(program) {
+        let log = gl.get_program_info_log(program);
+        gl.delete_program(program);
+        return Err(log);
+    }
+    Ok(program)
 }
 
-impl View<'_> {
-    fn proj(&self, p: V3) -> Option<(Pos2, f32)> {
-        self.cam.project_depth(p, self.rect)
-    }
+pub struct GlSceneRenderer {
+    program: glow::Program,
+    vao: glow::VertexArray,
+    vbo: glow::Buffer,
+    ebo: glow::Buffer,
+}
 
-    /// Дальние элементы темнее — глубина читается лучше.
-    fn shade(&self, depth: f32) -> f32 {
-        1.0 - 0.40 * ((depth - (self.cam.distance - 0.8)) / 1.6).clamp(0.0, 1.0)
-    }
+impl GlSceneRenderer {
+    pub fn new(gl: &glow::Context) -> Result<Self, String> {
+        unsafe {
+            let program = create_program(gl)?;
+            let vao = gl.create_vertex_array()?;
+            let vbo = gl.create_buffer()?;
+            let ebo = gl.create_buffer()?;
 
-    fn capsule(&self, ps: &mut Passes, a: V3, b: V3, ra: f32, rb: f32, tone: Tone) {
-        let (Some((pa, da)), Some((pb, db))) = (self.proj(a), self.proj(b)) else { return };
-        let (ra, rb) = (ra * self.k / da, rb * self.k / db);
-        let fill = tone_color(tone);
-        let edge = mul(fill, 0.28);
-        if ra.max(rb) < 1.7 {
-            let w = (ra + rb).max(1.0);
-            ps.outline.push(Shape::line_segment([pa, pb], Stroke::new(w + 2.0, edge)));
-            ps.fill.push(Shape::line_segment([pa, pb], Stroke::new(w, fill)));
-            return;
+            gl.bind_vertex_array(Some(vao));
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
+            gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(ebo));
+
+            let stride = std::mem::size_of::<GlVertex>() as i32;
+
+            gl.vertex_attrib_pointer_f32(0, 3, glow::FLOAT, false, stride, 0);
+            gl.enable_vertex_attrib_array(0);
+
+            gl.vertex_attrib_pointer_f32(1, 3, glow::FLOAT, false, stride, 12);
+            gl.enable_vertex_attrib_array(1);
+
+            gl.vertex_attrib_pointer_f32(2, 4, glow::FLOAT, false, stride, 24);
+            gl.enable_vertex_attrib_array(2);
+
+            gl.vertex_attrib_pointer_f32(3, 1, glow::FLOAT, false, stride, 40);
+            gl.enable_vertex_attrib_array(3);
+
+            gl.bind_vertex_array(None);
+            gl.bind_buffer(glow::ARRAY_BUFFER, None);
+            gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, None);
+
+            Ok(Self { program, vao, vbo, ebo })
         }
-        let d = pb - pa;
-        let l = d.length();
-        let n = if l > 0.5 { Vec2::new(-d.y, d.x) / l } else { Vec2::new(0.0, 1.0) };
-        for (grow, col, dst) in [(1.3_f32, edge, &mut ps.outline), (0.0, fill, &mut ps.fill)] {
-            let (r1, r2) = (ra + grow, rb + grow);
-            dst.push(Shape::circle_filled(pa, r1, col));
-            dst.push(Shape::circle_filled(pb, r2, col));
-            if l > 0.5 {
-                dst.push(Shape::convex_polygon(
-                    vec![pa + n * r1, pb + n * r2, pb - n * r2, pa - n * r1],
-                    col,
-                    Stroke::NONE,
-                ));
+    }
+
+    pub fn paint(
+        &mut self,
+        gl: &glow::Context,
+        mvp: &[f32; 16],
+        eye_pos: [f32; 3],
+        tri_vertices: &[GlVertex],
+        tri_indices: &[u32],
+        line_vertices: &[GlVertex],
+        line_indices: &[u32],
+    ) {
+        unsafe {
+            // Активация аппаратного 24-битного теста глубины
+            gl.enable(glow::DEPTH_TEST);
+            gl.depth_func(glow::LEQUAL);
+            gl.depth_mask(true);
+
+            gl.clear(glow::DEPTH_BUFFER_BIT);
+
+            gl.use_program(Some(self.program));
+
+            if let Some(loc) = gl.get_uniform_location(self.program, "u_mvp") {
+                gl.uniform_matrix_4_f32_slice(Some(&loc), false, mvp);
             }
-        }
-    }
+            if let Some(loc) = gl.get_uniform_location(self.program, "u_light_key") {
+                gl.uniform_3_f32(Some(&loc), 0.48, 0.72, 0.50);
+            }
+            if let Some(loc) = gl.get_uniform_location(self.program, "u_light_fill") {
+                gl.uniform_3_f32(Some(&loc), -0.45, -0.30, -0.45);
+            }
+            if let Some(loc) = gl.get_uniform_location(self.program, "u_eye_pos") {
+                gl.uniform_3_f32(Some(&loc), eye_pos[0], eye_pos[1], eye_pos[2]);
+            }
 
-    fn sphere(&self, ps: &mut Passes, c: V3, r: f32, tone: Tone) {
-        let Some((p, d)) = self.proj(c) else { return };
-        let r = r * self.k / d;
-        let fill = tone_color(tone);
-        ps.outline.push(Shape::circle_filled(p, r + 1.3, mul(fill, 0.28)));
-        ps.fill.push(Shape::circle_filled(p, r, fill));
-    }
+            let u_is_line_loc = gl.get_uniform_location(self.program, "u_is_line");
 
-    fn tri(&self, ps: &mut Passes, p: [V3; 3], tone: Tone) {
-        let (Some(a), Some(b), Some(c)) = (self.proj(p[0]), self.proj(p[1]), self.proj(p[2])) else { return };
-        ps.fill.push(Shape::convex_polygon(vec![a.0, b.0, c.0], tone_color(tone), Stroke::NONE));
-    }
+            gl.bind_vertex_array(Some(self.vao));
 
-    /// Только крупные суставы, единым стилем: тёмная точка со светлым кольцом.
-    fn joint(&self, out: &mut Items, j: &Joint) {
-        if j.marker_r < 0.012 {
-            return;
-        }
-        let Some((p, d)) = self.proj(j.pos) else { return };
-        let r = (j.marker_r * self.k / d * 0.7).clamp(2.5, 6.0);
-        let s = vec![
-            Shape::circle_filled(p, r + 1.2, Color32::from_rgb(150, 205, 255)),
-            Shape::circle_filled(p, r, Color32::from_rgb(28, 40, 70)),
-        ];
-        out.push((d - 0.02, Shape::Vec(s)));
-    }
+            // 1. Отрисовка сплошной 3D-геометрии с отсечением задних граней CCW
+            if !tri_indices.is_empty() {
+                if let Some(ref loc) = u_is_line_loc {
+                    gl.uniform_1_i32(Some(loc), 0);
+                }
 
-    /// Плата датчика: жёлтая — свободное место, зелёная — активный датчик.
-    fn sensor(&self, out: &mut Items, st: &SensorSite, active: bool) {
-        let Some((_, dc)) = self.proj(st.pos) else { return };
-        let facing = dot(st.normal, self.fwd) < 0.0;
-        let half = st.chip.half();
-        let k = (2.8 / (half * self.k / dc)).max(1.0); // слишком мелкие платы увеличиваем до 2.8 px
-        let u = st.tangent;
-        let v = norm(cross(st.normal, u));
-        let (hu, hv) = (half * k, half * 0.75 * k);
-        let corners = [
-            madd(madd(st.pos, u, hu), v, hv),
-            madd(madd(st.pos, u, hu), v, -hv),
-            madd(madd(st.pos, u, -hu), v, -hv),
-            madd(madd(st.pos, u, -hu), v, hv),
-        ];
-        let mut pts = Vec::with_capacity(4);
-        for c in corners {
-            let Some((p, _)) = self.proj(c) else { return };
-            pts.push(p);
+                gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbo));
+                let v_bytes = std::slice::from_raw_parts(
+                    tri_vertices.as_ptr() as *const u8,
+                    tri_vertices.len() * std::mem::size_of::<GlVertex>(),
+                );
+                gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, v_bytes, glow::DYNAMIC_DRAW);
+
+                gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(self.ebo));
+                let i_bytes = std::slice::from_raw_parts(
+                    tri_indices.as_ptr() as *const u8,
+                    tri_indices.len() * std::mem::size_of::<u32>(),
+                );
+                gl.buffer_data_u8_slice(glow::ELEMENT_ARRAY_BUFFER, i_bytes, glow::DYNAMIC_DRAW);
+
+                gl.enable(glow::CULL_FACE);
+                gl.cull_face(glow::BACK);
+                gl.front_face(glow::CCW);
+
+                gl.draw_elements(glow::TRIANGLES, tri_indices.len() as i32, glow::UNSIGNED_INT, 0);
+
+                gl.disable(glow::CULL_FACE);
+            }
+
+            // 2. Отрисовка линий пола и осей вращения датчиков
+            if !line_indices.is_empty() {
+                if let Some(ref loc) = u_is_line_loc {
+                    gl.uniform_1_i32(Some(loc), 1);
+                }
+
+                gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbo));
+                let v_bytes = std::slice::from_raw_parts(
+                    line_vertices.as_ptr() as *const u8,
+                    line_vertices.len() * std::mem::size_of::<GlVertex>(),
+                );
+                gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, v_bytes, glow::DYNAMIC_DRAW);
+
+                gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(self.ebo));
+                let i_bytes = std::slice::from_raw_parts(
+                    line_indices.as_ptr() as *const u8,
+                    line_indices.len() * std::mem::size_of::<u32>(),
+                );
+                gl.buffer_data_u8_slice(glow::ELEMENT_ARRAY_BUFFER, i_bytes, glow::DYNAMIC_DRAW);
+
+                gl.draw_elements(glow::LINES, line_indices.len() as i32, glow::UNSIGNED_INT, 0);
+            }
+
+            // Восстановление состояния контекста
+            gl.bind_vertex_array(None);
+            gl.bind_buffer(glow::ARRAY_BUFFER, None);
+            gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, None);
+            gl.use_program(None);
+            gl.disable(glow::DEPTH_TEST);
         }
-        let op = if facing { 1.0 } else { 0.35 };
-        let (fill, border, dot_c, w) = if active {
-            (Color32::from_rgb(18, 70, 36), Color32::from_rgb(40, 240, 90), Color32::WHITE, 1.8)
-        } else {
-            (Color32::from_rgb(110, 90, 16), Color32::from_rgb(255, 215, 30), Color32::from_rgb(255, 235, 90), 1.3)
-        };
-        let center = self.proj(st.pos).map_or(pts[0], |c| c.0);
-        let bs = Stroke::new(w, border.gamma_multiply(op));
-        let mut s = vec![Shape::convex_polygon(pts.clone(), fill.gamma_multiply(op), Stroke::NONE)];
-        for i in 0..4 {
-            s.push(Shape::line_segment([pts[i], pts[(i + 1) % 4]], bs));
-        }
-        if (pts[0] - pts[2]).length() > 9.0 {
-            s.push(Shape::circle_filled(center, 1.5, dot_c.gamma_multiply(op)));
-        }
-        let sd = self.proj(st.support).map_or(dc, |p| p.1);
-        out.push((sd + if facing { -0.015 } else { 0.015 }, Shape::Vec(s)));
     }
 }
 
-/// Рисует скелет, суставы и датчики; `quats[id]` — кватернион активного датчика.
-pub fn draw_skeleton(
+static GL_RENDERER: OnceLock<Mutex<GlSceneRenderer>> = OnceLock::new();
+
+fn tone_rgba(t: Tone) -> [f32; 4] {
+    match t {
+        Tone::Cortical | Tone::Plate | Tone::Trabecular => [0.72, 0.74, 0.78, 1.0],
+        Tone::Cartilage => [0.55, 0.62, 0.72, 1.0],
+        Tone::Tooth => [0.92, 0.92, 0.90, 1.0],
+        Tone::Dark => [0.18, 0.21, 0.28, 1.0],
+    }
+}
+
+fn create_ortho(axis: V3) -> (V3, V3) {
+    let ref_dir = if axis[1].abs() < 0.88 { [0.0, 1.0, 0.0] } else { [1.0, 0.0, 0.0] };
+    let u = norm(cross(axis, ref_dir));
+    let v = cross(axis, u);
+    (u, v)
+}
+
+/// Строит параметрический сфероцилиндр (CapsuleGeometry) со сферическими куполами
+/// по стандарту Three.js (Lathe profile) со строгим внешним CCW-порядком обхода.
+fn add_capsule_geo(
+    v_out: &mut Vec<GlVertex>,
+    i_out: &mut Vec<u32>,
+    a: V3,
+    b: V3,
+    ra: f32,
+    rb: f32,
+    tone: Tone,
+) {
+    let axis = sub(b, a);
+    let len = super::vec3::len(axis);
+    if len < 1e-4 {
+        add_sphere_geo(v_out, i_out, a, ra.max(rb), tone);
+        return;
+    }
+
+    let w = scale(axis, 1.0 / len);
+    let (u, v) = create_ortho(w);
+    let color = tone_rgba(tone);
+
+    const SECTORS: usize = 20;
+    let mut cos_sin = [(0.0_f32, 0.0_f32); SECTORS];
+    for k in 0..SECTORS {
+        let angle = (k as f32) * (std::f32::consts::TAU / SECTORS as f32);
+        cos_sin[k] = (angle.cos(), angle.sin());
+    }
+
+    const DOME_STACKS: usize = 4;
+    let base_idx = v_out.len() as u32;
+
+    // 1. Южный полюс А (вершина веера купола А)
+    let pole_a = madd(a, w, -ra);
+    v_out.push(GlVertex { pos: pole_a, normal: scale(w, -1.0), color, ao: 0.70 });
+
+    // 2. Купол А (широтные кольца от -pi/2 до 0)
+    for s in 1..=DOME_STACKS {
+        let phi = -std::f32::consts::FRAC_PI_2 + (s as f32) * (std::f32::consts::FRAC_PI_2 / DOME_STACKS as f32);
+        let sin_p = phi.sin();
+        let cos_p = phi.cos();
+        let ring_center = madd(a, w, ra * sin_p);
+        let ring_r = ra * cos_p;
+        let ao = 0.70 + 0.20 * (s as f32 / DOME_STACKS as f32);
+
+        for &(ca, sa) in &cos_sin {
+            let radial = add(scale(u, ca), scale(v, sa));
+            let pos = madd(ring_center, radial, ring_r);
+            let nrm = norm(add(scale(radial, cos_p), scale(w, sin_p)));
+            v_out.push(GlVertex { pos, normal: nrm, color, ao });
+        }
+    }
+
+    // 3. Цилиндрическое тело конуса (продольный переход к экватору В)
+    let tan_alpha = (ra - rb) / len;
+    let cos_alpha = 1.0 / (1.0 + tan_alpha * tan_alpha).sqrt();
+    let sin_alpha = tan_alpha * cos_alpha;
+
+    for &(ca, sa) in &cos_sin {
+        let radial = add(scale(u, ca), scale(v, sa));
+        let pos = madd(b, radial, rb);
+        let nrm = norm(add(scale(radial, cos_alpha), scale(w, sin_alpha)));
+        v_out.push(GlVertex { pos, normal: nrm, color, ao: 0.90 });
+    }
+
+    // 4. Купол B (широтные кольца от 0 до +pi/2)
+    for s in 1..DOME_STACKS {
+        let phi = (s as f32) * (std::f32::consts::FRAC_PI_2 / DOME_STACKS as f32);
+        let sin_p = phi.sin();
+        let cos_p = phi.cos();
+        let ring_center = madd(b, w, rb * sin_p);
+        let ring_r = rb * cos_p;
+        let ao = 0.90 - 0.20 * (s as f32 / DOME_STACKS as f32);
+
+        for &(ca, sa) in &cos_sin {
+            let radial = add(scale(u, ca), scale(v, sa));
+            let pos = madd(ring_center, radial, ring_r);
+            let nrm = norm(add(scale(radial, cos_p), scale(w, sin_p)));
+            v_out.push(GlVertex { pos, normal: nrm, color, ao });
+        }
+    }
+
+    // 5. Северный полюс B (вершина веера купола B)
+    let pole_b = madd(b, w, rb);
+    let pole_b_idx = v_out.len() as u32;
+    v_out.push(GlVertex { pos: pole_b, normal: w, color, ao: 0.70 });
+
+    // Генерация индексов треугольников со строгим CCW-порядком обхода
+
+    // Веер южного купола А
+    for k in 0..SECTORS {
+        let nk = (k + 1) % SECTORS;
+        let r1_k = base_idx + 1 + k as u32;
+        let r1_nk = base_idx + 1 + nk as u32;
+        i_out.extend([base_idx, r1_nk, r1_k]);
+    }
+
+    // Стек колец: Купол А + Цилиндрическое тело + Купол В
+    // Общее число промежуточных колец = DOME_STACKS (купол А) + 1 (экватор В) + (DOME_STACKS - 1) (купол В)
+    let total_rings = DOME_STACKS + 1 + (DOME_STACKS - 1);
+
+    for ring in 0..(total_rings - 1) {
+        let r0_start = base_idx + 1 + (ring * SECTORS) as u32;
+        let r1_start = base_idx + 1 + ((ring + 1) * SECTORS) as u32;
+
+        for k in 0..SECTORS {
+            let nk = (k + 1) % SECTORS;
+
+            let a0 = r0_start + k as u32;
+            let a1 = r0_start + nk as u32;
+            let b0 = r1_start + k as u32;
+            let b1 = r1_start + nk as u32;
+
+            // Внешний CCW-обход наружу
+            i_out.extend([a0, a1, b0]);
+            i_out.extend([a1, b1, b0]);
+        }
+    }
+
+    // Веер северного купола В
+    let last_ring_start = base_idx + 1 + ((total_rings - 1) * SECTORS) as u32;
+    for k in 0..SECTORS {
+        let nk = (k + 1) % SECTORS;
+        let r_k = last_ring_start + k as u32;
+        let r_nk = last_ring_start + nk as u32;
+        i_out.extend([pole_b_idx, r_k, r_nk]);
+    }
+}
+
+/// Строит замкнутую UV-сферу со строгим CCW-обходом.
+fn add_sphere_geo(
+    v_out: &mut Vec<GlVertex>,
+    i_out: &mut Vec<u32>,
+    c: V3,
+    r: f32,
+    tone: Tone,
+) {
+    const SLICES: usize = 20;
+    const STACKS: usize = 10;
+    let color = tone_rgba(tone);
+    let base_idx = v_out.len() as u32;
+
+    // Южный полюс
+    let pole_s = [c[0], c[1] - r, c[2]];
+    v_out.push(GlVertex { pos: pole_s, normal: [0.0, -1.0, 0.0], color, ao: 1.0 });
+
+    // Промежуточные широтные кольца
+    for s in 1..STACKS {
+        let lat = -std::f32::consts::FRAC_PI_2 + (s as f32) * (std::f32::consts::PI / STACKS as f32);
+        let y = r * lat.sin();
+        let r_lat = r * lat.cos();
+
+        for k in 0..SLICES {
+            let lon = (k as f32) * (std::f32::consts::TAU / SLICES as f32);
+            let radial = [r_lat * lon.cos(), y, r_lat * lon.sin()];
+            v_out.push(GlVertex {
+                pos: add(c, radial),
+                normal: norm(radial),
+                color,
+                ao: 1.0,
+            });
+        }
+    }
+
+    // Северный полюс
+    let pole_n = [c[0], c[1] + r, c[2]];
+    let pole_n_idx = v_out.len() as u32;
+    v_out.push(GlVertex { pos: pole_n, normal: [0.0, 1.0, 0.0], color, ao: 1.0 });
+
+    // Веер южного полюса
+    for k in 0..SLICES {
+        let nk = (k + 1) % SLICES;
+        let r1_k = base_idx + 1 + k as u32;
+        let r1_nk = base_idx + 1 + nk as u32;
+        i_out.extend([base_idx, r1_nk, r1_k]);
+    }
+
+    // Стек промежуточных колец (STACKS - 2 стека)
+    for s in 0..(STACKS - 2) {
+        let r0_start = base_idx + 1 + (s * SLICES) as u32;
+        let r1_start = base_idx + 1 + ((s + 1) * SLICES) as u32;
+
+        for k in 0..SLICES {
+            let nk = (k + 1) % SLICES;
+
+            let a0 = r0_start + k as u32;
+            let a1 = r0_start + nk as u32;
+            let b0 = r1_start + k as u32;
+            let b1 = r1_start + nk as u32;
+
+            i_out.extend([a0, a1, b0]);
+            i_out.extend([a1, b1, b0]);
+        }
+    }
+
+    // Веер северного полюса
+    let last_ring_start = base_idx + 1 + ((STACKS - 2) * SLICES) as u32;
+    for k in 0..SLICES {
+        let nk = (k + 1) % SLICES;
+        let r_k = last_ring_start + k as u32;
+        let r_nk = last_ring_start + nk as u32;
+        i_out.extend([pole_n_idx, r_k, r_nk]);
+    }
+}
+
+pub fn draw_scene_3d(
     painter: &Painter,
     camera: &OrbitalCamera,
     rect: Rect,
     skel: &Skeleton,
     quats: &[Option<[f32; 4]>],
 ) {
-    let v = View {
-        cam: camera,
-        rect,
-        k: camera.pixels_per_meter_at_unit_depth(rect),
-        fwd: camera.forward(),
-    };
-    let mut ps = Passes { outline: Vec::new(), fill: Vec::new() };
-    for p in &skel.prims {
-        match *p {
-            Prim::Capsule { a, b, ra, rb, tone } => v.capsule(&mut ps, a, b, ra, rb, tone),
-            Prim::Sphere { c, r, tone } => v.sphere(&mut ps, c, r, tone),
-            Prim::Tri { p, tone } => v.tri(&mut ps, p, tone),
+    let mut tri_vertices: Vec<GlVertex> = Vec::with_capacity(4096);
+    let mut tri_indices: Vec<u32> = Vec::with_capacity(8192);
+
+    let mut line_vertices: Vec<GlVertex> = Vec::with_capacity(1024);
+    let mut line_indices: Vec<u32> = Vec::with_capacity(1024);
+
+    // 1. Геометрия тела манекена
+    for pr in &skel.prims {
+        match *pr {
+            Prim::Capsule { a, b, ra, rb, tone } => {
+                add_capsule_geo(&mut tri_vertices, &mut tri_indices, a, b, ra, rb, tone);
+            }
+            Prim::Sphere { c, r, tone } => {
+                add_sphere_geo(&mut tri_vertices, &mut tri_indices, c, r, tone);
+            }
+            _ => {}
         }
     }
-    painter.extend(ps.outline);
-    painter.extend(ps.fill);
-    // Суставы и датчики — поверх тела; обратная сторона приглушена
-    let mut items: Items = Vec::with_capacity(128);
+
+    // 2. Геометрия суставов (уменьшенные серые шарики)
     for j in &skel.joints {
-        v.joint(&mut items, j);
+        let r = if j.marker_r > 0.010 { 0.007 } else { 0.005 };
+        add_sphere_geo(&mut tri_vertices, &mut tri_indices, j.pos, r, Tone::Dark);
     }
+
+    // 3. Геометрия 64 чипов датчиков (желтый для неактивных, зеленый для активных)
     for (st, q) in skel.sites.iter().zip(quats) {
-        v.sensor(&mut items, st, q.is_some());
+        let is_active = q.is_some();
+        let color = if is_active {
+            [0.15, 0.95, 0.35, 1.0]
+        } else {
+            [1.0, 0.84, 0.12, 1.0]
+        };
+
+        let half = st.chip.half();
+        let u = st.tangent;
+        let v = norm(cross(st.normal, u));
+        let (hu, hv) = (half, half * 0.75);
+
+        let c0 = madd(madd(st.pos, u, -hu), v, -hv);
+        let c1 = madd(madd(st.pos, u, hu), v, -hv);
+        let c2 = madd(madd(st.pos, u, hu), v, hv);
+        let c3 = madd(madd(st.pos, u, -hu), v, hv);
+
+        let base = tri_vertices.len() as u32;
+        tri_vertices.push(GlVertex { pos: c0, normal: st.normal, color, ao: 1.0 });
+        tri_vertices.push(GlVertex { pos: c1, normal: st.normal, color, ao: 1.0 });
+        tri_vertices.push(GlVertex { pos: c2, normal: st.normal, color, ao: 1.0 });
+        tri_vertices.push(GlVertex { pos: c3, normal: st.normal, color, ao: 1.0 });
+
+        // Строгий CCW-обход наружу
+        tri_indices.extend([base, base + 1, base + 2]);
+        tri_indices.extend([base, base + 2, base + 3]);
     }
-    items.sort_by(|a, b| b.0.total_cmp(&a.0));
-    painter.extend(items.into_iter().map(|(_, s)| s));
 
-    // Оси активных датчиков поверх всего (на обратной стороне — приглушены)
-    for (st, q) in skel.sites.iter().zip(quats) {
-        if let Some(q) = q {
-            let facing = dot(st.normal, v.fwd) < 0.0;
-            let base = add(st.pos, scale(st.normal, 0.0));
-            draw_axes_gizmo(painter, camera, rect, base, *q, st.chip.axis_len(), if facing { 1.0 } else { 0.35 });
-        }
-    }
-}
+    // 4. Линии сетки горизонта (Y = 0)
+    let grid_size = 5.0_f32;
+    let step = 0.5_f32;
+    let half = grid_size * 0.5;
 
-/// Горизонтальная координатная сетка пола при Y = 0.
-pub fn draw_floor_grid(painter: &Painter, camera: &OrbitalCamera, rect: Rect, size: f32, step: f32) {
-    let grid_stroke = Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(50, 65, 85, 90));
-    let axis_stroke_x = Stroke::new(1.4_f32, Color32::from_rgba_unmultiplied(180, 50, 50, 130));
-    let axis_stroke_z = Stroke::new(1.4_f32, Color32::from_rgba_unmultiplied(50, 100, 200, 130));
+    let mut add_line = |p1: [f32; 3], p2: [f32; 3], color: [f32; 4]| {
+        let b = line_vertices.len() as u32;
+        line_vertices.push(GlVertex { pos: p1, normal: [0.0, 1.0, 0.0], color, ao: 1.0 });
+        line_vertices.push(GlVertex { pos: p2, normal: [0.0, 1.0, 0.0], color, ao: 1.0 });
+        line_indices.extend([b, b + 1]);
+    };
 
-    let half = size * 0.5;
+    let col_grid = [0.20, 0.25, 0.35, 0.65];
+    let col_x = [0.75, 0.20, 0.20, 0.85];
+    let col_z = [0.20, 0.45, 0.85, 0.85];
+
     let mut x = -half;
     while x <= half + 0.001 {
-        let stroke = if x.abs() < 0.001 { axis_stroke_z } else { grid_stroke };
-        if let (Some(p1), Some(p2)) = (camera.project([x, 0.0, -half], rect), camera.project([x, 0.0, half], rect)) {
-            painter.line_segment([p1, p2], stroke);
-        }
+        let color = if x.abs() < 0.001 { col_z } else { col_grid };
+        add_line([x, 0.0, -half], [x, 0.0, half], color);
         x += step;
     }
+
     let mut z = -half;
     while z <= half + 0.001 {
-        let stroke = if z.abs() < 0.001 { axis_stroke_x } else { grid_stroke };
-        if let (Some(p1), Some(p2)) = (camera.project([-half, 0.0, z], rect), camera.project([half, 0.0, z], rect)) {
-            painter.line_segment([p1, p2], stroke);
-        }
+        let color = if z.abs() < 0.001 { col_x } else { col_grid };
+        add_line([-half, 0.0, z], [half, 0.0, z], color);
         z += step;
     }
+
+    // 5. Оси ориентации активных датчиков
+    for (st, q) in skel.sites.iter().zip(quats) {
+        if let Some(quat) = q {
+            let axis_len = st.chip.axis_len();
+            let axes = [
+                ([axis_len, 0.0, 0.0], [0.95, 0.20, 0.20, 1.0]),
+                ([0.0, axis_len, 0.0], [0.20, 0.90, 0.30, 1.0]),
+                ([0.0, 0.0, axis_len], [0.20, 0.50, 1.0, 1.0]),
+            ];
+            for (local, col) in axes {
+                let rot = rotate_vector_by_quat(local, *quat);
+                let tip = add(st.pos, rot);
+                add_line(st.pos, tip, col);
+            }
+        }
+    }
+
+    let aspect = rect.width() / rect.height().max(1.0);
+    let mvp = camera.calc_mvp(aspect);
+    let eye_pos = camera.eye_position();
+
+    let callback = egui::PaintCallback {
+        rect,
+        callback: Arc::new(egui_glow::CallbackFn::new(move |_info, painter_gl| {
+            let gl = painter_gl.gl();
+            let renderer_lock = GL_RENDERER.get_or_init(|| {
+                Mutex::new(GlSceneRenderer::new(gl).expect("Сбой инициализации 3D GL-рендерера"))
+            });
+            if let Ok(mut renderer) = renderer_lock.lock() {
+                renderer.paint(
+                    gl,
+                    &mvp,
+                    eye_pos,
+                    &tri_vertices,
+                    &tri_indices,
+                    &line_vertices,
+                    &line_indices,
+                );
+            }
+        })),
+    };
+
+    painter.add(callback);
 }

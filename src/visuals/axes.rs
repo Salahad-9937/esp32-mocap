@@ -1,4 +1,4 @@
-//! Оси ориентации активных датчиков.
+//! Оси ориентации активных датчиков и векторные трансформации.
 
 use super::viewport::OrbitalCamera;
 use egui::{Color32, Painter, Rect, Stroke};
@@ -24,8 +24,7 @@ pub fn rotate_vector_by_quat(v: [f32; 3], q: [f32; 4]) -> [f32; 3] {
     ]
 }
 
-/// Ориентированный базис (X — красный, Y — зелёный, Z — синий) из центра платы.
-/// `opacity` (0..1) — для приглушения датчиков на обратной стороне тела.
+/// Отрисовывает ориентированный базис (X — красный, Y — зеленый, Z — синий).
 pub fn draw_axes_gizmo(
     painter: &Painter,
     camera: &OrbitalCamera,
@@ -38,12 +37,14 @@ pub fn draw_axes_gizmo(
     let Some(center_2d) = camera.project(position, rect) else {
         return;
     };
-    let width = if axis_length < 0.04 { 1.6_f32 } else { 2.4_f32 };
+
+    let width = if axis_length < 0.04 { 1.5_f32 } else { 2.2_f32 };
     let axes = [
         ([axis_length, 0.0, 0.0], Color32::from_rgb(240, 50, 50)),
         ([0.0, axis_length, 0.0], Color32::from_rgb(50, 220, 70)),
         ([0.0, 0.0, axis_length], Color32::from_rgb(45, 130, 255)),
     ];
+
     for (local, color) in axes {
         let r = rotate_vector_by_quat(local, quat);
         let tip = [position[0] + r[0], position[1] + r[1], position[2] + r[2]];

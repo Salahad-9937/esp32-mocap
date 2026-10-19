@@ -1,5 +1,6 @@
-//! Интерактивная орбитальная 3D-камера и аналитическая проекция на 2D-холст.
+//! Интерактивная орбитальная 3D-камера и расчет матриц преобразования.
 
+use super::vec3::{cross, dot, norm, sub};
 use egui::{Pos2, Rect};
 
 /// Параметры сферической орбитальной камеры вокруг целевой точки.
@@ -22,7 +23,6 @@ impl Default for OrbitalCamera {
         Self {
             target: [0.0, 0.88, 0.0],
             distance: 2.6,
-            // Человек смотрит в +Z, поэтому камера с yaw ≈ π видит его спереди.
             yaw: std::f32::consts::PI - 0.55,
             pitch: -0.10,
             fov_scale: 1.0,
@@ -31,7 +31,7 @@ impl Default for OrbitalCamera {
 }
 
 impl OrbitalCamera {
-    /// Обрабатывает взаимодействие с мышью без захвата глобальных блокировок контекста.
+    /// Обрабатывает взаимодействие с мышью.
     pub fn handle_input(&mut self, ui_response: &egui::Response, scroll_delta: f32) {
         if ui_response.dragged_by(egui::PointerButton::Primary) {
             let delta = ui_response.drag_delta();
@@ -61,20 +61,18 @@ impl OrbitalCamera {
         self.project_depth(p, rect).map(|(pos, _)| pos)
     }
 
-    /// Проекция вместе с глубиной точки вдоль взгляда камеры (для сортировки по глубине).
+    /// Проекция вместе с глубиной точки вдоль взгляда камеры.
     #[must_use]
     pub fn project_depth(&self, p: [f32; 3], rect: Rect) -> Option<(Pos2, f32)> {
         let dx = p[0] - self.target[0];
         let dy = p[1] - self.target[1];
         let dz = p[2] - self.target[2];
 
-        // Поворот вокруг оси Y (yaw)
         let cos_y = self.yaw.cos();
         let sin_y = self.yaw.sin();
         let x1 = cos_y * dx - sin_y * dz;
         let z1 = sin_y * dx + cos_y * dz;
 
-        // Поворот вокруг поперечной оси X (pitch)
         let cos_p = self.pitch.cos();
         let sin_p = self.pitch.sin();
         let y2 = cos_p * dy - sin_p * z1;
@@ -82,7 +80,7 @@ impl OrbitalCamera {
 
         let depth = z2 + self.distance;
         if depth <= 0.10 {
-            return None; // Точка за плоскостью отсечения камеры
+            return None;
         }
 
         let scale = self.pixels_per_meter_at_unit_depth(rect) / depth;
@@ -92,18 +90,72 @@ impl OrbitalCamera {
         Some((Pos2::new(screen_x, screen_y), depth))
     }
 
-    /// Масштаб проекции: пикселей на метр при глубине 1 м (на глубине `d` — делить на `d`).
+    /// Масштаб проекции в пикселях на метр.
     #[must_use]
     pub fn pixels_per_meter_at_unit_depth(&self, rect: Rect) -> f32 {
         rect.height() * 0.88 * self.fov_scale
     }
 
-    /// Единичный вектор направления взгляда камеры в мировых координатах.
-    /// Поверхность смотрит на камеру, если `dot(normal, forward) < 0`.
+    /// Единичный вектор направления взгляда камеры.
     #[must_use]
     pub fn forward(&self) -> [f32; 3] {
         let (sy, cy) = self.yaw.sin_cos();
         let (sp, cp) = self.pitch.sin_cos();
         [cp * sy, sp, cp * cy]
+    }
+
+    /// Мировые координаты точки наблюдения (глаза) камеры.
+    #[must_use]
+    pub fn eye_position(&self) -> [f32; 3] {
+        let fwd = self.forward();
+        [
+            self.target[0] - fwd[0] * self.distance,
+            self.target[1] - fwd[1] * self.distance,
+            self.target[2] - fwd[2] * self.distance,
+        ]
+    }
+
+    /// Вычисляет однородную $4 \times 4$ матрицу Model-View-Projection (column-major) для OpenGL.
+    #[must_use]
+    pub fn calc_mvp(&self, aspect: f32) -> [f32; 16] {
+        let eye = self.eye_position();
+        let target = self.target;
+
+        let f = norm(sub(target, eye));
+        let up_ref = [0.0_f32, 1.0, 0.0];
+        let r = norm(cross(f, up_ref));
+        let u = cross(r, f);
+
+        let view = [
+            [r[0], u[0], -f[0], 0.0],
+            [r[1], u[1], -f[1], 0.0],
+            [r[2], u[2], -f[2], 0.0],
+            [-dot(r, eye), -dot(u, eye), dot(f, eye), 1.0],
+        ];
+
+        let fov_rad = 0.785398_f32 / self.fov_scale.clamp(0.1, 4.0);
+        let f_proj = 1.0 / (fov_rad * 0.5).tan();
+        let near = 0.1_f32;
+        let far = 50.0_f32;
+        let range_inv = 1.0 / (near - far);
+
+        let proj = [
+            [f_proj / aspect.max(0.001), 0.0, 0.0, 0.0],
+            [0.0, f_proj, 0.0, 0.0],
+            [0.0, 0.0, (far + near) * range_inv, -1.0],
+            [0.0, 0.0, 2.0 * far * near * range_inv, 0.0],
+        ];
+
+        let mut mvp = [0.0_f32; 16];
+        for col in 0..4 {
+            for row in 0..4 {
+                let mut sum = 0.0_f32;
+                for k in 0..4 {
+                    sum += proj[k][row] * view[col][k];
+                }
+                mvp[col * 4 + row] = sum;
+            }
+        }
+        mvp
     }
 }

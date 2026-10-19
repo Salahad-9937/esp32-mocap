@@ -21,6 +21,7 @@ fn main() -> Result<(), eframe::Error> {
             .with_title(&config.window_title)
             .with_inner_size([config.window_width, config.window_height])
             .with_min_inner_size([1024.0, 640.0]),
+        depth_buffer: 24,
         ..Default::default()
     };
 
