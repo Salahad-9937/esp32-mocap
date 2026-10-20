@@ -1,0 +1,13 @@
+[package]
+name = "mocap-model"
+version = "0.2.0"
+edition = "2021"
+authors = ["Salahad"]
+description = "Headless biomechanical skeleton, mannequin geometry, sensor sites and spatial raycasting"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+
+[lib]
+name = "mocap_model"
+path = "src/lib.rs"
