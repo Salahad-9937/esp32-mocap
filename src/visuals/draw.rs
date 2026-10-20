@@ -1,5 +1,7 @@
-//! Аппаратный 3D-рендерер манекена: параметрические сфероцилиндры, сферы,
-//! полигональные анатомические меши (Prim::Mesh), строгий CCW-обход, Z-буфер и чипы датчиков.
+//! # Аппаратный 3D-растеризатор манекена (`draw`)
+//!
+//! Исполняет рендеринг полигонального анатомического скелета, суставов, двусторонних чипов
+//! сенсоров, напольной сетки и объемного каркаса рабочей зоны через конвейер OpenGL Glow.
 
 use super::axes::rotate_vector_by_quat;
 use super::placement::{self, PlacedChip};
@@ -202,7 +204,7 @@ impl GlSceneRenderer {
 
             gl.bind_vertex_array(Some(self.vao));
 
-            // 1. Отрисовка сплошной 3D-геометрии
+            // 1. Отрисовка сплошной 3D-геометрии (манекен, суставы, датчики)
             if !tri_indices.is_empty() {
                 if let Some(ref loc) = u_is_line_loc {
                     gl.uniform_1_i32(Some(loc), 0);
@@ -210,14 +212,14 @@ impl GlSceneRenderer {
 
                 gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbo));
                 let v_bytes = std::slice::from_raw_parts(
-                    tri_vertices.as_ptr() as *const u8,
+                    tri_vertices.as_ptr().cast::<u8>(),
                     tri_vertices.len() * std::mem::size_of::<GlVertex>(),
                 );
                 gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, v_bytes, glow::DYNAMIC_DRAW);
 
                 gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(self.ebo));
                 let i_bytes = std::slice::from_raw_parts(
-                    tri_indices.as_ptr() as *const u8,
+                    tri_indices.as_ptr().cast::<u8>(),
                     tri_indices.len() * std::mem::size_of::<u32>(),
                 );
                 gl.buffer_data_u8_slice(glow::ELEMENT_ARRAY_BUFFER, i_bytes, glow::DYNAMIC_DRAW);
@@ -231,7 +233,7 @@ impl GlSceneRenderer {
                 gl.disable(glow::CULL_FACE);
             }
 
-            // 2. Отрисовка линий пола и осей
+            // 2. Отрисовка линий пола, объемного каркаса рабочей зоны и осей
             if !line_indices.is_empty() {
                 if let Some(ref loc) = u_is_line_loc {
                     gl.uniform_1_i32(Some(loc), 1);
@@ -239,14 +241,14 @@ impl GlSceneRenderer {
 
                 gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vbo));
                 let v_bytes = std::slice::from_raw_parts(
-                    line_vertices.as_ptr() as *const u8,
+                    line_vertices.as_ptr().cast::<u8>(),
                     line_vertices.len() * std::mem::size_of::<GlVertex>(),
                 );
                 gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, v_bytes, glow::DYNAMIC_DRAW);
 
                 gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(self.ebo));
                 let i_bytes = std::slice::from_raw_parts(
-                    line_indices.as_ptr() as *const u8,
+                    line_indices.as_ptr().cast::<u8>(),
                     line_indices.len() * std::mem::size_of::<u32>(),
                 );
                 gl.buffer_data_u8_slice(glow::ELEMENT_ARRAY_BUFFER, i_bytes, glow::DYNAMIC_DRAW);
@@ -523,7 +525,7 @@ pub fn draw_scene_3d(
         add_sphere_geo(&mut tri_vertices, &mut tri_indices, j.pos, r, Tone::Dark);
     }
 
-    // 3. Метки датчиков: сетка 3×3, приклеенная к поверхности (не «висит» на изгибах)
+    // 3. Метки датчиков: двусторонняя сетка 3×3, видимая с любых сторон
     let highlighted = placement::highlight();
     for (st, q) in chips.iter().zip(quats) {
         let color = if highlighted == Some(st.id) {
@@ -541,15 +543,18 @@ pub fn draw_scene_3d(
             for col in 0..2u32 {
                 let v00 = base + row * 3 + col;
                 let (v01, v10, v11) = (v00 + 1, v00 + 3, v00 + 4);
+                // Лицевая сторона (исправленный CCW обход)
+                tri_indices.extend([v00, v11, v01, v00, v10, v11]);
+                // Обратная сторона (для двусторонней видимости без отсечения)
                 tri_indices.extend([v00, v01, v11, v00, v11, v10]);
             }
         }
     }
 
-    // 4. Линии сетки горизонта (Y = 0)
-    let grid_size = 5.0_f32;
-    let step = 0.5_f32;
-    let half = grid_size * 0.5;
+    // 4. Линии сетки горизонта (Y = 0) и объемные пространственные границы рабочей зоны (1.5x: 7.5x7.5 м)
+    let half = 3.75_f32;
+    let height = 3.30_f32;
+    let step = 0.75_f32;
 
     let mut add_line = |p1: [f32; 3], p2: [f32; 3], color: [f32; 4]| {
         let b = line_vertices.len() as u32;
@@ -561,20 +566,51 @@ pub fn draw_scene_3d(
     let col_grid = [0.20, 0.25, 0.35, 0.65];
     let col_x = [0.75, 0.20, 0.20, 0.85];
     let col_z = [0.20, 0.45, 0.85, 0.85];
+    let col_perimeter = [0.28, 0.62, 0.92, 0.85];
+    let col_cage_vert = [0.22, 0.48, 0.75, 0.45];
+    let col_cage_top = [0.18, 0.36, 0.58, 0.35];
 
+    // Линии сетки пола вдоль оси Z
     let mut x = -half;
     while x <= half + 0.001 {
-        let color = if x.abs() < 0.001 { col_z } else { col_grid };
+        let is_edge = (x - half).abs() < 0.001 || (x + half).abs() < 0.001;
+        let color = if is_edge {
+            col_perimeter
+        } else if x.abs() < 0.001 {
+            col_z
+        } else {
+            col_grid
+        };
         add_line([x, 0.0, -half], [x, 0.0, half], color);
         x += step;
     }
 
+    // Линии сетки пола вдоль оси X
     let mut z = -half;
     while z <= half + 0.001 {
-        let color = if z.abs() < 0.001 { col_x } else { col_grid };
+        let is_edge = (z - half).abs() < 0.001 || (z + half).abs() < 0.001;
+        let color = if is_edge {
+            col_perimeter
+        } else if z.abs() < 0.001 {
+            col_x
+        } else {
+            col_grid
+        };
         add_line([-half, 0.0, z], [half, 0.0, z], color);
         z += step;
     }
+
+    // 4 угловых вертикальных пилона рабочей зоны (Y: 0.0 -> 3.30)
+    add_line([-half, 0.0, -half], [-half, height, -half], col_cage_vert);
+    add_line([half, 0.0, -half], [half, height, -half], col_cage_vert);
+    add_line([-half, 0.0, half], [-half, height, half], col_cage_vert);
+    add_line([half, 0.0, half], [half, height, half], col_cage_vert);
+
+    // Верхняя рамка периметра рабочей зоны (Y = 3.30)
+    add_line([-half, height, -half], [half, height, -half], col_cage_top);
+    add_line([half, height, -half], [half, height, half], col_cage_top);
+    add_line([half, height, half], [-half, height, half], col_cage_top);
+    add_line([-half, height, half], [-half, height, -half], col_cage_top);
 
     // 5. Оси ориентации активных датчиков
     for (st, q) in chips.iter().zip(quats) {

@@ -1,17 +1,19 @@
-//! Размещение 64 меток датчиков на теле: приклеивание к поверхности, перетаскивание
-//! мышью, сброс (всех или одной) и сохранение раскладки в `sensor_layout.txt`.
+//! # Размещение и фиксация меток датчиков на теле (`placement`)
+//!
+//! Обеспечивает приклеивание 64 сенсорных плат к кривизне поверхности манекена,
+//! хранение пользовательских смещений и передачу команд фокусировки камеры.
 
 use super::skeleton::{skeleton, Chip, SENSOR_COUNT};
 use super::surface::raycast;
 use super::vec3::{cross, dot, madd, norm, scale, sub, V3};
 use std::sync::{Mutex, OnceLock};
 
-/// Файл с раскладкой (рядом с исполняемым файлом / в рабочей папке).
+/// Файл локального сохранения пользовательской раскладки сенсоров
 pub const LAYOUT_FILE: &str = "sensor_layout.txt";
-/// Подъём метки над поверхностью, м (чтобы не мерцала с кожей манекена).
-const LIFT: f32 = 0.0008;
+/// Подъем плоскости метки над кожей манекена для устранения Z-файтинга (метры)
+const LIFT: f32 = 0.0022;
 
-/// Метка, приклеенная к поверхности: центр, нормаль и сетка 3×3, повторяющая кривизну тела.
+/// Дескриптор метки датчика, зафиксированной на поверхности тела.
 #[derive(Clone)]
 pub struct PlacedChip {
     pub id: usize,
@@ -20,7 +22,6 @@ pub struct PlacedChip {
     pub pos: V3,
     pub normal: V3,
     pub tangent: V3,
-    /// Узлы сетки: индекс = ряд * 3 + колонка (колонка — вдоль `tangent`).
     pub patch: [V3; 9],
     pub patch_n: [V3; 9],
 }
@@ -40,12 +41,26 @@ struct State {
     drag: Option<usize>,
 }
 
+static PENDING_FOCUS: Mutex<Option<(V3, f32)>> = Mutex::new(None);
+
+/// Резервирует команду фокусировки камеры на точке `pos`.
+pub fn request_focus(pos: V3, dist: f32) {
+    if let Ok(mut lock) = PENDING_FOCUS.lock() {
+        *lock = Some((pos, dist));
+    }
+}
+
+/// Извлекает отложенный запрос фокусировки для камеры.
+#[must_use]
+pub fn take_pending_focus() -> Option<(V3, f32)> {
+    PENDING_FOCUS.lock().ok().and_then(|mut lock| lock.take())
+}
+
 fn state() -> &'static Mutex<State> {
     static STATE: OnceLock<Mutex<State>> = OnceLock::new();
     STATE.get_or_init(|| Mutex::new(State::new()))
 }
 
-/// Тангенс, ортогональный нормали и по возможности направленный вдоль тела (вверх).
 fn fit_tangent(hint: V3, n: V3) -> V3 {
     for cand in [hint, [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]] {
         let t = sub(cand, scale(n, dot(cand, n)));
@@ -56,7 +71,6 @@ fn fit_tangent(hint: V3, n: V3) -> V3 {
     norm(cross(n, [1.0, 0.0, 0.0]))
 }
 
-/// Нормаль и точка на поверхности под заданной точкой (луч вдоль −normal).
 fn snap(pos: V3, normal: V3) -> (V3, V3) {
     if let Some(h) = raycast(madd(pos, normal, 0.02), scale(normal, -1.0), 0.06) {
         return (h.pos, h.normal);
@@ -67,7 +81,6 @@ fn snap(pos: V3, normal: V3) -> (V3, V3) {
     (pos, normal)
 }
 
-/// Строит метку: центр уже на поверхности, сетка 3×3 приклеивается лучами вдоль нормали.
 fn conform(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
     let site = &skeleton().sites[id];
     let n = normal;
@@ -90,7 +103,16 @@ fn conform(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
             }
         }
     }
-    PlacedChip { id, tag: site.tag, chip: site.chip, pos: patch[4], normal: n, tangent: u, patch, patch_n }
+    PlacedChip {
+        id,
+        tag: site.tag,
+        chip: site.chip,
+        pos: patch[4],
+        normal: n,
+        tangent: u,
+        patch,
+        patch_n,
+    }
 }
 
 impl State {
@@ -115,7 +137,9 @@ impl State {
     }
 
     fn load(&mut self) {
-        let Ok(text) = std::fs::read_to_string(LAYOUT_FILE) else { return };
+        let Ok(text) = std::fs::read_to_string(LAYOUT_FILE) else {
+            return;
+        };
         for line in text.lines() {
             let f: Vec<f32> = line.split_whitespace().filter_map(|x| x.parse().ok()).collect();
             if f.len() != 10 || f[0] < 0.0 || f[0] as usize >= SENSOR_COUNT {
@@ -124,7 +148,11 @@ impl State {
             let id = f[0] as usize;
             let (p, n) = snap([f[1], f[2], f[3]], norm([f[4], f[5], f[6]]));
             let chip = conform(id, p, n, [f[7], f[8], f[9]]);
-            self.custom[id] = Some(Custom { pos: chip.pos, normal: chip.normal, tangent: chip.tangent });
+            self.custom[id] = Some(Custom {
+                pos: chip.pos,
+                normal: chip.normal,
+                tangent: chip.tangent,
+            });
             self.chips[id] = chip;
         }
     }
@@ -153,13 +181,11 @@ fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
     f(&mut g)
 }
 
-/// Текущие метки (с учётом перемещённых пользователем).
 #[must_use]
 pub fn chips() -> Vec<PlacedChip> {
     with(|s| s.chips.clone())
 }
 
-/// Метка, подсвеченная курсором или перетаскиваемая.
 #[must_use]
 pub fn highlight() -> Option<usize> {
     with(|s| s.drag.or(s.hover))
@@ -170,7 +196,6 @@ pub fn dragging() -> Option<usize> {
     with(|s| s.drag)
 }
 
-/// Возвращает `true`, если подсвеченная метка изменилась.
 pub fn set_hover(h: Option<usize>) -> bool {
     with(|s| {
         let changed = s.hover != h;
@@ -184,13 +209,12 @@ pub fn tag(id: usize) -> &'static str {
     skeleton().sites[id].tag
 }
 
-/// Ближайшая метка к точке на теле (в пределах размера платы).
 #[must_use]
 pub fn pick(p: V3) -> Option<usize> {
     with(|s| {
         s.chips
             .iter()
-            .map(|c| (c.id, super::vec3::dist(c.pos, p), (c.chip.half() * 2.0).max(0.014)))
+            .map(|c| (c.id, super::vec3::dist(c.pos, p), (c.chip.half() * 2.0).max(0.016)))
             .filter(|&(_, d, tol)| d < tol)
             .min_by(|a, b| a.1.total_cmp(&b.1))
             .map(|x| x.0)
@@ -201,7 +225,6 @@ pub fn begin_drag(id: usize) {
     with(|s| s.drag = Some(id));
 }
 
-/// Завершает перетаскивание и сохраняет раскладку.
 pub fn end_drag() {
     with(|s| {
         s.drag = None;
@@ -209,16 +232,18 @@ pub fn end_drag() {
     });
 }
 
-/// Переносит метку в точку на поверхности (`pos`, `normal` — результат трассировки).
 pub fn move_chip(id: usize, pos: V3, normal: V3) {
     with(|s| {
         let chip = conform(id, pos, normal, s.chips[id].tangent);
-        s.custom[id] = Some(Custom { pos: chip.pos, normal: chip.normal, tangent: chip.tangent });
+        s.custom[id] = Some(Custom {
+            pos: chip.pos,
+            normal: chip.normal,
+            tangent: chip.tangent,
+        });
         s.chips[id] = chip;
     });
 }
 
-/// Сбрасывает одну метку на положение по умолчанию.
 pub fn reset_one(id: usize) {
     with(|s| {
         s.custom[id] = None;
@@ -227,7 +252,6 @@ pub fn reset_one(id: usize) {
     });
 }
 
-/// Сбрасывает все метки на положения по умолчанию.
 pub fn reset_all() {
     with(|s| {
         s.custom = [None; SENSOR_COUNT];
@@ -236,7 +260,6 @@ pub fn reset_all() {
     });
 }
 
-/// Сколько меток сейчас перемещено пользователем.
 #[must_use]
 pub fn custom_count() -> usize {
     with(|s| s.custom.iter().filter(|c| c.is_some()).count())
