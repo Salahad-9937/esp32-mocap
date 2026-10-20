@@ -1,9 +1,9 @@
-//! Точка входа эталонного графического приложения `mocap-app`.
+//! # Точка входа эталонного графического приложения `mocap-app`
 
 mod app;
 mod config;
+mod ingestion;
 mod state;
-mod transport;
 mod views;
 mod visuals;
 

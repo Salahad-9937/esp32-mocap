@@ -1,34 +1,23 @@
-//! Потокобезопасные буферы телеметрии, структуры измерений и статистика потока.
+//! # Состояние пользовательской сессии UI и потокобезопасные буферы (`state`)
 
+use mocap_core::calibration::NodeBias;
+use mocap_core::mapping::MappingProfile;
+use mocap_core::protocol::RawNodeData;
+use mocap_core::types::ImuSample;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-/// Сырые 16-битные знаковые показания АЦП одного узла BMI160.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct RawNodeMeasurement {
-    pub gx: i16,
-    pub gy: i16,
-    pub gz: i16,
-    pub ax: i16,
-    pub ay: i16,
-    pub az: i16,
-}
-
-/// Физически нормализованные кинематические величины в единицах СИ.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub struct CalibratedMeasurement {
-    pub accel_mps2: [f32; 3],
-    pub gyro_rads: [f32; 3],
-}
+pub type RawNodeMeasurement = RawNodeData;
+pub type CalibratedMeasurement = ImuSample;
 
 /// Полный дескриптор состояния активного узла с ориентацией и привязкой к кости.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeTelemetry {
     pub mux_address: u8,
     pub channel: u8,
-    pub raw: RawNodeMeasurement,
-    pub calibrated: CalibratedMeasurement,
+    pub raw: RawNodeData,
+    pub calibrated: ImuSample,
     pub orientation_quat: [f32; 4],
     pub bone_tag: Option<String>,
     pub peak_energy: f32,
@@ -39,8 +28,8 @@ impl Default for NodeTelemetry {
         Self {
             mux_address: 0x70,
             channel: 0,
-            raw: RawNodeMeasurement::default(),
-            calibrated: CalibratedMeasurement::default(),
+            raw: RawNodeData::default(),
+            calibrated: ImuSample::default(),
             orientation_quat: [1.0, 0.0, 0.0, 0.0],
             bone_tag: None,
             peak_energy: 0.0,
@@ -66,7 +55,7 @@ pub struct StreamStats {
     pub crc_errors: AtomicU64,
 }
 
-/// Совокупный снимок телеметрии, разделяемый между потоками.
+/// Совокупный снимок телеметрии и команд, разделяемый между потоками.
 #[derive(Debug)]
 pub struct SharedTelemetryState {
     pub nodes: Mutex<Vec<NodeTelemetry>>,
@@ -79,6 +68,10 @@ pub struct SharedTelemetryState {
     pub calculated_fps: Mutex<f32>,
     pub last_frame_instant: Mutex<Option<Instant>>,
     pub connection_error: Mutex<Option<String>>,
+    pub request_calibration: AtomicBool,
+    pub calibration_progress: Mutex<Option<f32>>,
+    pub active_biases: Mutex<Vec<NodeBias>>,
+    pub mapping_profile: Mutex<MappingProfile>,
 }
 
 impl Default for SharedTelemetryState {
@@ -94,6 +87,10 @@ impl Default for SharedTelemetryState {
             calculated_fps: Mutex::new(0.0),
             last_frame_instant: Mutex::new(None),
             connection_error: Mutex::new(None),
+            request_calibration: AtomicBool::new(false),
+            calibration_progress: Mutex::new(None),
+            active_biases: Mutex::new(Vec::new()),
+            mapping_profile: Mutex::new(MappingProfile::default()),
         }
     }
 }

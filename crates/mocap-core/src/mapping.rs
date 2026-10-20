@@ -1,30 +1,24 @@
-//! Модуль логической привязки аппаратных каналов к сегментам анатомического скелета.
+//! # Логическая привязка каналов к сегментам анатомического скелета (`mapping`)
 
 use crate::error::{MocapError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
-/// Физический идентификатор аппаратного канала.
+/// Физический идентификатор аппаратного канала коммутатора.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct HardwareChannel {
-    pub mux_index: u8,
+    pub mux_address: u8,
     pub channel_index: u8,
 }
 
-/// Запись ассоциативного сопоставления узла.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MappingEntry {
-    pub node_index: usize,
-    pub hardware: HardwareChannel,
-    pub bone_name: String,
-}
-
-/// Сохраняемый конфигурационный профиль маппинга.
+/// Конфигурационный профиль маппинга датчиков на сегменты скелета.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct MappingProfile {
+    #[serde(default)]
     pub name: String,
-    pub entries: Vec<MappingEntry>,
+    #[serde(default)]
+    pub mappings: HashMap<String, String>,
 }
 
 impl MappingProfile {
@@ -32,48 +26,51 @@ impl MappingProfile {
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
-            entries: Vec::new(),
+            mappings: HashMap::new(),
         }
     }
 
-    pub fn add_mapping(&mut self, node_index: usize, hardware: HardwareChannel, bone_name: &str) {
-        self.entries.retain(|e| e.node_index != node_index && e.bone_name != bone_name);
-        self.entries.push(MappingEntry {
-            node_index,
-            hardware,
-            bone_name: bone_name.to_string(),
-        });
-    }
-
+    /// Формирует строковый ключ канала в каноническом формате `0x70:0`.
     #[must_use]
-    pub fn find_bone(&self, node_index: usize) -> Option<&str> {
-        self.entries
-            .iter()
-            .find(|e| e.node_index == node_index)
-            .map(|e| e.bone_name.as_str())
+    pub fn channel_key(mux_address: u8, channel: u8) -> String {
+        format!("0x{mux_address:02X}:{channel}")
     }
 
-    /// Сохраняет профиль в текстовый файл формата TOML.
-    pub fn save_to_file(&self, path: &Path) -> Result<()> {
-        let serialized = toml::to_string_pretty(self)?;
-        std::fs::write(path, serialized).map_err(|e| MocapError::MappingError(e.to_string()))?;
-        Ok(())
+    /// Устанавливает привязку аппаратного канала к сегменту скелета.
+    pub fn set_mapping(&mut self, mux_address: u8, channel: u8, bone_name: &str) {
+        let key = Self::channel_key(mux_address, channel);
+        self.mappings.insert(key, bone_name.to_string());
     }
 
-    /// Загружает профиль из текстового файла формата TOML.
+    /// Считывает имя сегмента скелета для заданного физического канала.
+    #[must_use]
+    pub fn get_bone(&self, mux_address: u8, channel: u8) -> Option<&str> {
+        let key = Self::channel_key(mux_address, channel);
+        self.mappings.get(&key).map(String::as_str)
+    }
+
+    /// Удаляет привязку физического канала.
+    pub fn remove_mapping(&mut self, mux_address: u8, channel: u8) {
+        let key = Self::channel_key(mux_address, channel);
+        self.mappings.remove(&key);
+    }
+
+    /// Загружает профиль из TOML файла на диске.
     pub fn load_from_file(path: &Path) -> Result<Self> {
-        let content = std::fs::read_to_string(path).map_err(|e| MocapError::MappingError(e.to_string()))?;
+        if !path.exists() {
+            return Ok(Self::default());
+        }
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| MocapError::MappingError(e.to_string()))?;
         let profile = toml::from_str(&content)?;
         Ok(profile)
     }
 
-    /// Формирует быструю хеш-карту соответствия индексов узлов именам костей.
-    #[must_use]
-    pub fn to_lookup_map(&self) -> HashMap<usize, String> {
-        let mut map = HashMap::new();
-        for entry in &self.entries {
-            map.insert(entry.node_index, entry.bone_name.clone());
-        }
-        map
+    /// Сохраняет профиль в TOML файл на диске.
+    pub fn save_to_file(&self, path: &Path) -> Result<()> {
+        let serialized = toml::to_string_pretty(self)?;
+        std::fs::write(path, serialized)
+            .map_err(|e| MocapError::MappingError(e.to_string()))?;
+        Ok(())
     }
 }

@@ -1,52 +1,36 @@
-//! Интерактивный конфигуратор привязки физических каналов к сегментам скелета.
+//! # Интерактивный конфигуратор привязки физических каналов к скелету (`mapper`)
 
 use crate::state::SharedStateHandle;
 use egui::{Color32, ProgressBar, RichText, Ui};
-use serde::{Deserialize, Serialize};
+use mocap_core::mapping::MappingProfile;
 use std::collections::HashMap;
-use std::fs;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-/// Полный перечень 64 целевых сегментов тела для распределенного костюма захвата движений.
 pub const TARGET_BONES: [&str; 64] = [
-    // Голова и шея (4)
     "HeadTop", "HeadFront", "HeadOcciput", "Neck",
-    // Торс и позвоночник (8)
     "ThoraxUpper", "Thorax", "SpineCervical", "SpineThoracic",
     "Spine", "Pelvis", "PelvisLeft", "PelvisRight",
-    // Плечевой пояс (2)
     "LeftShoulder", "RightShoulder",
-    // Левая рука (4)
     "LeftUpperArm", "LeftUpperArmLower", "LeftForearm", "LeftForearmWrist",
-    // Правая рука (4)
     "RightUpperArm", "RightUpperArmLower", "RightForearm", "RightForearmWrist",
-    // Левая кисть и пальцы (13)
     "LeftHand", "LeftThumbProximal", "LeftThumbDistal",
     "LeftIndexProximal", "LeftIndexDistal", "LeftIndexTip",
     "LeftMiddleProximal", "LeftMiddleDistal", "LeftMiddleTip",
     "LeftRingProximal", "LeftRingDistal",
     "LeftPinkyProximal", "LeftPinkyDistal",
-    // Правая кисть и пальцы (13)
     "RightHand", "RightThumbProximal", "RightThumbDistal",
     "RightIndexProximal", "RightIndexDistal", "RightIndexTip",
     "RightMiddleProximal", "RightMiddleDistal", "RightMiddleTip",
     "RightRingProximal", "RightRingDistal",
     "RightPinkyProximal", "RightPinkyDistal",
-    // Левая нога (8)
     "LeftThigh", "LeftThighLower", "LeftKneeSensor",
     "LeftShin", "LeftShinLower", "LeftAnkleSensor",
     "LeftFoot", "LeftToe",
-    // Правая нога (8)
     "RightThigh", "RightThighLower", "RightKneeSensor",
     "RightShin", "RightShinLower", "RightAnkleSensor",
     "RightFoot", "RightToe",
 ];
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct MappingProfile {
-    pub mappings: HashMap<String, String>,
-}
 
 pub struct MapperView {
     pub profile: MappingProfile,
@@ -70,10 +54,8 @@ impl Default for MapperView {
 
 impl MapperView {
     pub fn load_profile(&mut self, path: &Path) {
-        if let Ok(content) = fs::read_to_string(path) {
-            if let Ok(deserialized) = toml::from_str::<MappingProfile>(&content) {
-                self.profile = deserialized;
-            }
+        if let Ok(p) = MappingProfile::load_from_file(path) {
+            self.profile = p;
         }
     }
 
@@ -90,7 +72,7 @@ impl MapperView {
             let total_dur = Duration::from_secs(2);
 
             for node in &nodes {
-                let key = format!("0x{:02X}:{}", node.mux_address, node.channel);
+                let key = MappingProfile::channel_key(node.mux_address, node.channel);
                 *self.accumulated_energies.entry(key).or_default() += node.peak_energy;
             }
 
@@ -114,6 +96,9 @@ impl MapperView {
                 if let Some(ch) = best_channel {
                     self.profile.mappings.insert(ch.clone(), target_bone.clone());
                     self.status_message = format!("Успешно назначен узел {ch} -> {target_bone}");
+                    if let Ok(mut prof) = shared.mapping_profile.lock() {
+                        *prof = self.profile.clone();
+                    }
                 } else {
                     self.status_message = "Движение не обнаружено. Повторите попытку.".to_string();
                 }
@@ -142,7 +127,7 @@ impl MapperView {
                         ui.end_row();
 
                         for (i, node) in nodes.iter().enumerate() {
-                            let key = format!("0x{:02X}:{}", node.mux_address, node.channel);
+                            let key = MappingProfile::channel_key(node.mux_address, node.channel);
                             ui.label(RichText::new(format!("#{i} [{key}]")).monospace());
 
                             let norm_energy = (node.peak_energy / 8.0).clamp(0.0, 1.0);
@@ -157,6 +142,9 @@ impl MapperView {
                                     for &bone in &TARGET_BONES {
                                         if ui.button(bone).clicked() {
                                             self.profile.mappings.insert(key.clone(), bone.to_string());
+                                            if let Ok(mut prof) = shared.mapping_profile.lock() {
+                                                *prof = self.profile.clone();
+                                            }
                                             ui.close_menu();
                                         }
                                     }
@@ -164,6 +152,9 @@ impl MapperView {
                                 ui.separator();
                                 if ui.button("Снять привязку").clicked() {
                                     self.profile.mappings.remove(&key);
+                                    if let Ok(mut prof) = shared.mapping_profile.lock() {
+                                                *prof = self.profile.clone();
+                                    }
                                     ui.close_menu();
                                 }
                             });
@@ -213,14 +204,16 @@ impl MapperView {
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             if ui.button("💾 Сохранить в TOML").clicked() {
-                if let Ok(serialized) = toml::to_string_pretty(&self.profile) {
-                    let _ = fs::write(profile_path, serialized);
+                if self.profile.save_to_file(profile_path).is_ok() {
                     self.status_message = "Профиль сохранен.".to_string();
                 }
             }
 
             if ui.button("📂 Загрузить").clicked() {
                 self.load_profile(profile_path);
+                if let Ok(mut prof) = shared.mapping_profile.lock() {
+                    *prof = self.profile.clone();
+                }
                 self.status_message = "Профиль загружен.".to_string();
             }
 

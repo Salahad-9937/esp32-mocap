@@ -1,12 +1,11 @@
-//! Модуль калибровки аппаратного нуля гироскопов и физического масштабирования.
+//! # Калибровка аппаратного нуля гироскопов и физическое масштабирование (`calibration`)
 
 use crate::error::{MocapError, Result};
 use crate::protocol::RawNodeData;
 use crate::types::{ImuSample, Vector3};
 
-// Константы масштабных коэффициентов Bosch BMI160
-pub const ACCEL_SCALE_4G: f64 = 9.80665 / 8192.0; // 8192 LSB/g -> м/с²
-pub const GYRO_SCALE_1000DPS: f64 = (std::f64::consts::PI / 180.0) / 32.8; // 32.8 LSB/(°/s) -> рад/с
+pub const ACCEL_SCALE_4G: f64 = 9.80665 / 8192.0;
+pub const GYRO_SCALE_1000DPS: f64 = (std::f64::consts::PI / 180.0) / 32.8;
 
 /// Статическое смещение нуля трехосевого гироскопа.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -24,25 +23,28 @@ pub struct BiasEstimator {
 
 impl BiasEstimator {
     #[must_use]
-    pub fn new(node_count: usize, target_samples: usize) -> Self {
+    pub fn new(initial_capacity: usize, target_samples: usize) -> Self {
+        let cap = initial_capacity.max(16);
         Self {
             target_samples: target_samples.max(10),
             collected_samples: 0,
-            accumulators: vec![Vector3::ZERO; node_count],
-            variance_acc: vec![Vector3::ZERO; node_count],
+            accumulators: vec![Vector3::ZERO; cap],
+            variance_acc: vec![Vector3::ZERO; cap],
         }
     }
 
-    /// Добавляет срез сырых данных текущего кадра в выборку.
+    /// Добавляет срез сырых данных текущего кадра в накопитель с динамическим расширением.
     pub fn push_sample(&mut self, raw_nodes: &[RawNodeData]) {
         if self.is_complete() {
             return;
         }
 
+        if raw_nodes.len() > self.accumulators.len() {
+            self.accumulators.resize(raw_nodes.len(), Vector3::ZERO);
+            self.variance_acc.resize(raw_nodes.len(), Vector3::ZERO);
+        }
+
         for (i, node) in raw_nodes.iter().enumerate() {
-            if i >= self.accumulators.len() {
-                break;
-            }
             let g = Vector3::new(node.gyr_x as f64, node.gyr_y as f64, node.gyr_z as f64);
             self.accumulators[i] = self.accumulators[i] + g;
             self.variance_acc[i] = self.variance_acc[i] + Vector3::new(g.x * g.x, g.y * g.y, g.z * g.z);
@@ -62,7 +64,7 @@ impl BiasEstimator {
         (self.collected_samples as f32 / self.target_samples as f32).clamp(0.0, 1.0)
     }
 
-    /// Вычисляет итоговый вектор смещений с проверкой на наличие движения оператора.
+    /// Вычисляет итоговый вектор смещений нуля с валидацией покоя.
     pub fn finalize(&self) -> Result<Vec<NodeBias>> {
         if !self.is_complete() {
             return Err(MocapError::CalibrationFailed("Недостаточно накопленных выборок".into()));
@@ -78,10 +80,9 @@ impl BiasEstimator {
                 + (mean_sq.y - mean.y * mean.y)
                 + (mean_sq.z - mean.z * mean.z);
 
-            // Если дисперсия шума превышает 400 LSB², датчик двигался во время калибровки
-            if variance > 400.0 {
+            if variance > 600.0 {
                 return Err(MocapError::CalibrationFailed(format!(
-                    "Обнаружено паразитное движение узла #{} (дисперсия {:.1})",
+                    "Обнаружено движение узла #{} во время калибровки (дисперсия {:.1})",
                     i + 1,
                     variance
                 )));
@@ -110,7 +111,7 @@ impl Calibrator {
         self.biases = biases;
     }
 
-    /// Преобразует сырые коды в физический срез с вычитанием калибровочного нуля.
+    /// Преобразует сырые коды в физический срез СИ с вычитанием калибровочного нуля.
     #[must_use]
     pub fn calibrate_node(&self, node_idx: usize, raw: &RawNodeData) -> ImuSample {
         let bias = self.biases.get(node_idx).copied().unwrap_or_default();

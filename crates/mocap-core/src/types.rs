@@ -1,4 +1,4 @@
-//! Базовые математические примитивы и физические структуры измерений.
+//! # Базовые математические примитивы и физические структуры измерений (`types`)
 
 use std::ops::{Add, Mul, Sub};
 
@@ -120,6 +120,12 @@ impl Quaternion {
             Self::IDENTITY
         }
     }
+
+    #[inline]
+    #[must_use]
+    pub fn to_f32_array(self) -> [f32; 4] {
+        [self.w as f32, self.x as f32, self.y as f32, self.z as f32]
+    }
 }
 
 impl Mul for Quaternion {
@@ -138,12 +144,16 @@ impl Mul for Quaternion {
 /// Единичный срез измерений одного датчика в физических величинах СИ.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ImuSample {
-    /// Линейное ускорение в м/с²
     pub accel: Vector3,
-    /// Угловая скорость в рад/с
     pub gyro: Vector3,
-    /// Исходный целочисленный код гироскопа
     pub raw_gyro: [i16; 3],
-    /// Исходный целочисленный код акселерометра
     pub raw_accel: [i16; 3],
+}
+
+impl ImuSample {
+    #[inline]
+    #[must_use]
+    pub fn kinetic_energy(&self) -> f32 {
+        self.gyro.length() as f32
+    }
 }
