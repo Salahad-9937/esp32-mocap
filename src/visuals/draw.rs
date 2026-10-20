@@ -1,13 +1,13 @@
-//! Аппаратный 3D-рендерер манекена: параметрические сфероцилиндры (Three.js Lathe-модель)
-//! со сферическими куполами, строгий CCW-обход, аппаратный Z-буфер и чипы 64 датчиков.
+//! Аппаратный 3D-рендерер манекена: параметрические сфероцилиндры, сферы,
+//! полигональные анатомические меши (Prim::Mesh), строгий CCW-обход, Z-буфер и чипы датчиков.
 
 use super::axes::rotate_vector_by_quat;
-use super::skeleton::{Joint, Prim, SensorSite, Skeleton, Tone};
-use super::vec3::{add, cross, dot, madd, norm, scale, sub, V3};
+use super::skeleton::{Joint, Prim, Skeleton, Tone};
+use super::vec3::{add, cross, madd, norm, scale, sub, V3};
 use super::viewport::OrbitalCamera;
 use eframe::egui_glow;
 use eframe::glow::{self, HasContext};
-use egui::{Color32, Painter, Rect};
+use egui::{Painter, Rect};
 use std::sync::{Arc, Mutex, OnceLock};
 
 /// Формат 3D-вершины для аппаратного конвейера OpenGL (stride = 44 байта).
@@ -44,7 +44,6 @@ void main() {
         vec3 lk = normalize(u_light_key);
         vec3 lf = normalize(u_light_fill);
 
-        // Half-Lambert для мягкого рассеяния пластика
         float n_dot_k = clamp(dot(n, lk) * 0.5 + 0.5, 0.0, 1.0);
         float key = n_dot_k * n_dot_k;
 
@@ -109,7 +108,6 @@ unsafe fn create_program(gl: &glow::Context) -> Result<glow::Program, String> {
     gl.attach_shader(program, vs);
     gl.attach_shader(program, fs);
 
-    // Явная привязка атрибутов для совместимости со всеми версиями GLSL
     gl.bind_attrib_location(program, 0, "a_pos");
     gl.bind_attrib_location(program, 1, "a_normal");
     gl.bind_attrib_location(program, 2, "a_color");
@@ -178,7 +176,6 @@ impl GlSceneRenderer {
         line_indices: &[u32],
     ) {
         unsafe {
-            // Активация аппаратного 24-битного теста глубины
             gl.enable(glow::DEPTH_TEST);
             gl.depth_func(glow::LEQUAL);
             gl.depth_mask(true);
@@ -204,7 +201,7 @@ impl GlSceneRenderer {
 
             gl.bind_vertex_array(Some(self.vao));
 
-            // 1. Отрисовка сплошной 3D-геометрии с отсечением задних граней CCW
+            // 1. Отрисовка сплошной 3D-геометрии
             if !tri_indices.is_empty() {
                 if let Some(ref loc) = u_is_line_loc {
                     gl.uniform_1_i32(Some(loc), 0);
@@ -233,7 +230,7 @@ impl GlSceneRenderer {
                 gl.disable(glow::CULL_FACE);
             }
 
-            // 2. Отрисовка линий пола и осей вращения датчиков
+            // 2. Отрисовка линий пола и осей
             if !line_indices.is_empty() {
                 if let Some(ref loc) = u_is_line_loc {
                     gl.uniform_1_i32(Some(loc), 1);
@@ -256,7 +253,6 @@ impl GlSceneRenderer {
                 gl.draw_elements(glow::LINES, line_indices.len() as i32, glow::UNSIGNED_INT, 0);
             }
 
-            // Восстановление состояния контекста
             gl.bind_vertex_array(None);
             gl.bind_buffer(glow::ARRAY_BUFFER, None);
             gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, None);
@@ -284,8 +280,6 @@ fn create_ortho(axis: V3) -> (V3, V3) {
     (u, v)
 }
 
-/// Строит параметрический сфероцилиндр (CapsuleGeometry) со сферическими куполами
-/// по стандарту Three.js (Lathe profile) со строгим внешним CCW-порядком обхода.
 fn add_capsule_geo(
     v_out: &mut Vec<GlVertex>,
     i_out: &mut Vec<u32>,
@@ -316,11 +310,9 @@ fn add_capsule_geo(
     const DOME_STACKS: usize = 4;
     let base_idx = v_out.len() as u32;
 
-    // 1. Южный полюс А (вершина веера купола А)
     let pole_a = madd(a, w, -ra);
     v_out.push(GlVertex { pos: pole_a, normal: scale(w, -1.0), color, ao: 0.70 });
 
-    // 2. Купол А (широтные кольца от -pi/2 до 0)
     for s in 1..=DOME_STACKS {
         let phi = -std::f32::consts::FRAC_PI_2 + (s as f32) * (std::f32::consts::FRAC_PI_2 / DOME_STACKS as f32);
         let sin_p = phi.sin();
@@ -337,7 +329,6 @@ fn add_capsule_geo(
         }
     }
 
-    // 3. Цилиндрическое тело конуса (продольный переход к экватору В)
     let tan_alpha = (ra - rb) / len;
     let cos_alpha = 1.0 / (1.0 + tan_alpha * tan_alpha).sqrt();
     let sin_alpha = tan_alpha * cos_alpha;
@@ -349,7 +340,6 @@ fn add_capsule_geo(
         v_out.push(GlVertex { pos, normal: nrm, color, ao: 0.90 });
     }
 
-    // 4. Купол B (широтные кольца от 0 до +pi/2)
     for s in 1..DOME_STACKS {
         let phi = (s as f32) * (std::f32::consts::FRAC_PI_2 / DOME_STACKS as f32);
         let sin_p = phi.sin();
@@ -366,14 +356,10 @@ fn add_capsule_geo(
         }
     }
 
-    // 5. Северный полюс B (вершина веера купола B)
     let pole_b = madd(b, w, rb);
     let pole_b_idx = v_out.len() as u32;
     v_out.push(GlVertex { pos: pole_b, normal: w, color, ao: 0.70 });
 
-    // Генерация индексов треугольников со строгим CCW-порядком обхода
-
-    // Веер южного купола А
     for k in 0..SECTORS {
         let nk = (k + 1) % SECTORS;
         let r1_k = base_idx + 1 + k as u32;
@@ -381,8 +367,6 @@ fn add_capsule_geo(
         i_out.extend([base_idx, r1_nk, r1_k]);
     }
 
-    // Стек колец: Купол А + Цилиндрическое тело + Купол В
-    // Общее число промежуточных колец = DOME_STACKS (купол А) + 1 (экватор В) + (DOME_STACKS - 1) (купол В)
     let total_rings = DOME_STACKS + 1 + (DOME_STACKS - 1);
 
     for ring in 0..(total_rings - 1) {
@@ -397,13 +381,11 @@ fn add_capsule_geo(
             let b0 = r1_start + k as u32;
             let b1 = r1_start + nk as u32;
 
-            // Внешний CCW-обход наружу
             i_out.extend([a0, a1, b0]);
             i_out.extend([a1, b1, b0]);
         }
     }
 
-    // Веер северного купола В
     let last_ring_start = base_idx + 1 + ((total_rings - 1) * SECTORS) as u32;
     for k in 0..SECTORS {
         let nk = (k + 1) % SECTORS;
@@ -413,7 +395,6 @@ fn add_capsule_geo(
     }
 }
 
-/// Строит замкнутую UV-сферу со строгим CCW-обходом.
 fn add_sphere_geo(
     v_out: &mut Vec<GlVertex>,
     i_out: &mut Vec<u32>,
@@ -426,11 +407,9 @@ fn add_sphere_geo(
     let color = tone_rgba(tone);
     let base_idx = v_out.len() as u32;
 
-    // Южный полюс
     let pole_s = [c[0], c[1] - r, c[2]];
     v_out.push(GlVertex { pos: pole_s, normal: [0.0, -1.0, 0.0], color, ao: 1.0 });
 
-    // Промежуточные широтные кольца
     for s in 1..STACKS {
         let lat = -std::f32::consts::FRAC_PI_2 + (s as f32) * (std::f32::consts::PI / STACKS as f32);
         let y = r * lat.sin();
@@ -448,12 +427,10 @@ fn add_sphere_geo(
         }
     }
 
-    // Северный полюс
     let pole_n = [c[0], c[1] + r, c[2]];
     let pole_n_idx = v_out.len() as u32;
     v_out.push(GlVertex { pos: pole_n, normal: [0.0, 1.0, 0.0], color, ao: 1.0 });
 
-    // Веер южного полюса
     for k in 0..SLICES {
         let nk = (k + 1) % SLICES;
         let r1_k = base_idx + 1 + k as u32;
@@ -461,7 +438,6 @@ fn add_sphere_geo(
         i_out.extend([base_idx, r1_nk, r1_k]);
     }
 
-    // Стек промежуточных колец (STACKS - 2 стека)
     for s in 0..(STACKS - 2) {
         let r0_start = base_idx + 1 + (s * SLICES) as u32;
         let r1_start = base_idx + 1 + ((s + 1) * SLICES) as u32;
@@ -479,7 +455,6 @@ fn add_sphere_geo(
         }
     }
 
-    // Веер северного полюса
     let last_ring_start = base_idx + 1 + ((STACKS - 2) * SLICES) as u32;
     for k in 0..SLICES {
         let nk = (k + 1) % SLICES;
@@ -496,32 +471,57 @@ pub fn draw_scene_3d(
     skel: &Skeleton,
     quats: &[Option<[f32; 4]>],
 ) {
-    let mut tri_vertices: Vec<GlVertex> = Vec::with_capacity(4096);
-    let mut tri_indices: Vec<u32> = Vec::with_capacity(8192);
+    let mut tri_vertices: Vec<GlVertex> = Vec::with_capacity(8192);
+    let mut tri_indices: Vec<u32> = Vec::with_capacity(16384);
 
     let mut line_vertices: Vec<GlVertex> = Vec::with_capacity(1024);
     let mut line_indices: Vec<u32> = Vec::with_capacity(1024);
 
     // 1. Геометрия тела манекена
     for pr in &skel.prims {
-        match *pr {
+        match pr {
             Prim::Capsule { a, b, ra, rb, tone } => {
-                add_capsule_geo(&mut tri_vertices, &mut tri_indices, a, b, ra, rb, tone);
+                add_capsule_geo(&mut tri_vertices, &mut tri_indices, *a, *b, *ra, *rb, *tone);
             }
             Prim::Sphere { c, r, tone } => {
-                add_sphere_geo(&mut tri_vertices, &mut tri_indices, c, r, tone);
+                add_sphere_geo(&mut tri_vertices, &mut tri_indices, *c, *r, *tone);
             }
-            _ => {}
+            Prim::Tri { p, tone } => {
+                let edge1 = sub(p[1], p[0]);
+                let edge2 = sub(p[2], p[0]);
+                let normal = norm(cross(edge1, edge2));
+                let color = tone_rgba(*tone);
+                let base = tri_vertices.len() as u32;
+                for &pos in p {
+                    tri_vertices.push(GlVertex { pos, normal, color, ao: 1.0 });
+                }
+                tri_indices.extend([base, base + 1, base + 2]);
+            }
+            Prim::Mesh { vertices, normals, indices, tone } => {
+                let color = tone_rgba(*tone);
+                let base = tri_vertices.len() as u32;
+                for i in 0..vertices.len() {
+                    tri_vertices.push(GlVertex {
+                        pos: vertices[i],
+                        normal: normals[i],
+                        color,
+                        ao: 1.0,
+                    });
+                }
+                for &idx in indices {
+                    tri_indices.push(base + idx);
+                }
+            }
         }
     }
 
-    // 2. Геометрия суставов (уменьшенные серые шарики)
+    // 2. Геометрия суставов
     for j in &skel.joints {
         let r = if j.marker_r > 0.010 { 0.007 } else { 0.005 };
         add_sphere_geo(&mut tri_vertices, &mut tri_indices, j.pos, r, Tone::Dark);
     }
 
-    // 3. Геометрия 64 чипов датчиков (желтый для неактивных, зеленый для активных)
+    // 3. Геометрия 64 чипов датчиков
     for (st, q) in skel.sites.iter().zip(quats) {
         let is_active = q.is_some();
         let color = if is_active {
@@ -546,7 +546,6 @@ pub fn draw_scene_3d(
         tri_vertices.push(GlVertex { pos: c2, normal: st.normal, color, ao: 1.0 });
         tri_vertices.push(GlVertex { pos: c3, normal: st.normal, color, ao: 1.0 });
 
-        // Строгий CCW-обход наружу
         tri_indices.extend([base, base + 1, base + 2]);
         tri_indices.extend([base, base + 2, base + 3]);
     }

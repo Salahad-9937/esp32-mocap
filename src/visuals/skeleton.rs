@@ -73,16 +73,21 @@ pub enum Tone {
     Dark,
 }
 
-/// Графический примитив скелета (рисуется с сортировкой по глубине).
-#[derive(Debug, Clone, Copy)]
+/// Графический примитив скелета (рисуется с аппаратным Z-буфером).
+#[derive(Debug, Clone)]
 pub enum Prim {
     Capsule { a: V3, b: V3, ra: f32, rb: f32, tone: Tone },
     Sphere { c: V3, r: f32, tone: Tone },
     Tri { p: [V3; 3], tone: Tone },
+    Mesh {
+        vertices: Vec<V3>,
+        normals: Vec<V3>,
+        indices: Vec<u32>,
+        tone: Tone,
+    },
 }
 
-/// Сустав кинематического дерева. Поля `name`, `parent`, `axis` нужны для будущей
-/// прямой кинематики (поворот костей по кватернионам датчиков).
+/// Сустав кинематического дерева.
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct Joint {
@@ -159,17 +164,11 @@ const fn d(tag: &'static str, side: Side, anchor: Anchor, chip: Chip) -> SensorD
     SensorDef { tag, side, anchor, chip }
 }
 
-use Anchor::{Forehead, Seg, Sacrum, Spinous, Sternum};
+use Anchor::{Forehead, Sacrum, Seg, Spinous, Sternum};
 use Chip::{Large as L, Medium as M, Small as S};
 use Side::{Left as Lt, Right as Rt};
 
-/// 64 датчика. Принцип: один датчик на жёсткий сегмент; на длинных сегментах
-/// (плечо, предплечье, бедро, голень) по два (проксимальный/дистальный) — для учёта
-/// скручивания и смещения мягких тканей; пальцы — по датчику на каждую фалангу;
-/// позвоночник — по датчику на каждый отдел.
-///
-/// Индексы: 0–7 ось, 8–11 плечевой пояс, 12–16 левая рука, 17–31 левые пальцы,
-/// 32–36 правая рука, 37–51 правые пальцы, 52–57 левая нога, 58–63 правая нога.
+/// 64 датчика.
 pub const SENSOR_DEFS: [SensorDef; SENSOR_COUNT] = [
     // ── Голова и ось тела (8) ──────────────────────────────────────────────
     d("Head", Rt, Forehead, M),            // лобная кость
@@ -245,7 +244,7 @@ pub const SENSOR_DEFS: [SensorDef; SENSOR_COUNT] = [
     d("RightToe", Rt, Seg("HalluxPP", 0.50, 0.0), S),
 ];
 
-/// Имена 64 целевых сегментов в порядке `SENSOR_DEFS` (для вкладки маппинга).
+/// Имена 64 целевых сегментов в порядке `SENSOR_DEFS`.
 pub const TARGET_BONES: [&str; SENSOR_COUNT] = {
     let mut out = [""; SENSOR_COUNT];
     let mut i = 0;
@@ -265,11 +264,11 @@ pub struct SensorSite {
     pub side: Side,
     /// Центр платы (на поверхности кости + `STANDOFF`).
     pub pos: V3,
-    /// Внешняя нормаль поверхности (куда «смотрит» плата).
+    /// Внешняя нормаль поверхности.
     pub normal: V3,
-    /// Направление длинной стороны платы (вдоль кости).
+    /// Направление длинной стороны платы.
     pub tangent: V3,
-    /// Точка внутри опорной кости — для корректной сортировки по глубине.
+    /// Точка внутри опорной кости.
     pub support: V3,
     pub chip: Chip,
 }
