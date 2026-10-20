@@ -530,7 +530,9 @@ impl eframe::App for MocapApp {
                 let (response, painter) = ui.allocate_painter(ui.available_size(), egui::Sense::drag());
 
                 let scroll_delta = ui.input(|i| i.raw_scroll_delta.y);
-                self.camera.handle_input(&response, scroll_delta);
+                // self.camera.handle_input(&response, scroll_delta);
+                let chip_drag = crate::visuals::interact::handle(ui, &response, &self.camera);
+                self.camera.handle_input_ex(&response, scroll_delta, !chip_drag);
 
                 if response.dragged() || (response.hovered() && scroll_delta != 0.0) {
                     ui.ctx().request_repaint();

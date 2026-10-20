@@ -1,6 +1,7 @@
 //! Отрисовка трехмерной сцены: координатная сетка, аппаратный 3D-манекен и 64 датчика.
 
 use super::draw::draw_scene_3d;
+use super::placement;
 use super::skeleton::{skeleton, SENSOR_COUNT};
 use super::viewport::OrbitalCamera;
 use crate::state::NodeTelemetry;
@@ -25,5 +26,6 @@ pub fn render_3d_scene(
     rect: Rect,
     nodes: &[NodeTelemetry],
 ) {
-    draw_scene_3d(painter, camera, rect, skeleton(), &active_quats(nodes));
+    let chips = placement::chips();
+    draw_scene_3d(painter, camera, rect, skeleton(), &chips, &active_quats(nodes));
 }

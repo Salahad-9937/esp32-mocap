@@ -27,8 +27,10 @@ impl Side {
     #[must_use]
     pub const fn sign(self) -> f32 {
         match self {
-            Side::Right => 1.0,
-            Side::Left => -1.0,
+            // Камера — правосторонняя (OpenGL): при Y вверх и лице в +Z левая сторона
+            // человека — это +X. Иначе манекен выглядит зеркальным.
+            Side::Right => -1.0,
+            Side::Left => 1.0,
         }
     }
 

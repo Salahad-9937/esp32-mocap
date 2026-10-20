@@ -2,7 +2,8 @@
 //! полигональные анатомические меши (Prim::Mesh), строгий CCW-обход, Z-буфер и чипы датчиков.
 
 use super::axes::rotate_vector_by_quat;
-use super::skeleton::{Joint, Prim, Skeleton, Tone};
+use super::placement::{self, PlacedChip};
+use super::skeleton::{Prim, Skeleton, Tone};
 use super::vec3::{add, cross, madd, norm, scale, sub, V3};
 use super::viewport::OrbitalCamera;
 use eframe::egui_glow;
@@ -469,6 +470,7 @@ pub fn draw_scene_3d(
     camera: &OrbitalCamera,
     rect: Rect,
     skel: &Skeleton,
+    chips: &[PlacedChip],
     quats: &[Option<[f32; 4]>],
 ) {
     let mut tri_vertices: Vec<GlVertex> = Vec::with_capacity(8192);
@@ -521,33 +523,27 @@ pub fn draw_scene_3d(
         add_sphere_geo(&mut tri_vertices, &mut tri_indices, j.pos, r, Tone::Dark);
     }
 
-    // 3. Геометрия 64 чипов датчиков
-    for (st, q) in skel.sites.iter().zip(quats) {
-        let is_active = q.is_some();
-        let color = if is_active {
+    // 3. Метки датчиков: сетка 3×3, приклеенная к поверхности (не «висит» на изгибах)
+    let highlighted = placement::highlight();
+    for (st, q) in chips.iter().zip(quats) {
+        let color = if highlighted == Some(st.id) {
+            [0.45, 0.85, 1.0, 1.0]
+        } else if q.is_some() {
             [0.15, 0.95, 0.35, 1.0]
         } else {
             [1.0, 0.84, 0.12, 1.0]
         };
-
-        let half = st.chip.half();
-        let u = st.tangent;
-        let v = norm(cross(st.normal, u));
-        let (hu, hv) = (half, half * 0.75);
-
-        let c0 = madd(madd(st.pos, u, -hu), v, -hv);
-        let c1 = madd(madd(st.pos, u, hu), v, -hv);
-        let c2 = madd(madd(st.pos, u, hu), v, hv);
-        let c3 = madd(madd(st.pos, u, -hu), v, hv);
-
         let base = tri_vertices.len() as u32;
-        tri_vertices.push(GlVertex { pos: c0, normal: st.normal, color, ao: 1.0 });
-        tri_vertices.push(GlVertex { pos: c1, normal: st.normal, color, ao: 1.0 });
-        tri_vertices.push(GlVertex { pos: c2, normal: st.normal, color, ao: 1.0 });
-        tri_vertices.push(GlVertex { pos: c3, normal: st.normal, color, ao: 1.0 });
-
-        tri_indices.extend([base, base + 1, base + 2]);
-        tri_indices.extend([base, base + 2, base + 3]);
+        for k in 0..9 {
+            tri_vertices.push(GlVertex { pos: st.patch[k], normal: st.patch_n[k], color, ao: 1.0 });
+        }
+        for row in 0..2u32 {
+            for col in 0..2u32 {
+                let v00 = base + row * 3 + col;
+                let (v01, v10, v11) = (v00 + 1, v00 + 3, v00 + 4);
+                tri_indices.extend([v00, v01, v11, v00, v11, v10]);
+            }
+        }
     }
 
     // 4. Линии сетки горизонта (Y = 0)
@@ -581,7 +577,7 @@ pub fn draw_scene_3d(
     }
 
     // 5. Оси ориентации активных датчиков
-    for (st, q) in skel.sites.iter().zip(quats) {
+    for (st, q) in chips.iter().zip(quats) {
         if let Some(quat) = q {
             let axis_len = st.chip.axis_len();
             let axes = [

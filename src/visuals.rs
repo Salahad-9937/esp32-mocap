@@ -3,8 +3,11 @@
 pub mod anatomy;
 pub mod axes;
 pub mod draw;
+pub mod interact;
+pub mod placement;
 pub mod scene;
 pub mod skeleton;
+pub mod surface;
 pub mod vec3;
 pub mod viewport;
 

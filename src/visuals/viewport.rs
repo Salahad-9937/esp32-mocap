@@ -1,6 +1,6 @@
 //! Интерактивная орбитальная 3D-камера и расчет матриц преобразования.
 
-use super::vec3::{cross, dot, norm, sub};
+use super::vec3::{add, cross, dot, norm, scale, sub};
 use egui::{Pos2, Rect};
 
 /// Параметры сферической орбитальной камеры вокруг целевой точки.
@@ -33,7 +33,15 @@ impl Default for OrbitalCamera {
 impl OrbitalCamera {
     /// Обрабатывает взаимодействие с мышью.
     pub fn handle_input(&mut self, ui_response: &egui::Response, scroll_delta: f32) {
-        if ui_response.dragged_by(egui::PointerButton::Primary) {
+        self.handle_input_ex(ui_response, scroll_delta, true);
+    }
+
+    /// То же, но `allow_drag = false` отключает вращение/панорамирование
+    /// (мышь занята перетаскиванием метки); масштаб колесом работает всегда.
+    pub fn handle_input_ex(&mut self, ui_response: &egui::Response, scroll_delta: f32, allow_drag: bool) {
+        if !allow_drag {
+            // перетаскивание занято меткой датчика
+        } else if ui_response.dragged_by(egui::PointerButton::Primary) {
             let delta = ui_response.drag_delta();
             self.yaw -= delta.x * 0.008;
             self.pitch = (self.pitch + delta.y * 0.008).clamp(-1.45, 1.45);
@@ -102,6 +110,21 @@ impl OrbitalCamera {
         let (sy, cy) = self.yaw.sin_cos();
         let (sp, cp) = self.pitch.sin_cos();
         [cp * sy, sp, cp * cy]
+    }
+
+    /// Луч из камеры через точку экрана: (начало, единичное направление) в мировых координатах.
+    #[must_use]
+    pub fn ray_from_screen(&self, p: Pos2, rect: Rect) -> ([f32; 3], [f32; 3]) {
+        let aspect = rect.width() / rect.height().max(1.0);
+        let nx = (p.x - rect.min.x) / rect.width().max(1.0) * 2.0 - 1.0;
+        let ny = 1.0 - (p.y - rect.min.y) / rect.height().max(1.0) * 2.0;
+        let eye = self.eye_position();
+        let f = norm(sub(self.target, eye));
+        let r = norm(cross(f, [0.0, 1.0, 0.0]));
+        let u = cross(r, f);
+        let t = (0.785398_f32 / self.fov_scale.clamp(0.1, 4.0) * 0.5).tan();
+        let dir = norm(add(add(f, scale(r, nx * aspect * t)), scale(u, ny * t)));
+        (eye, dir)
     }
 
     /// Мировые координаты точки наблюдения (глаза) камеры.
