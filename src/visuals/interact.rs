@@ -1,7 +1,7 @@
-//! # Интерактивный манипулятор датчиков и фокуса камеры (`interact`)
+//! # Интерактивный манипулятор датчиков, меню чувствительности и фокуса (`interact`)
 //!
-//! Обеспечивает наведение, фокусировку на суставах/сенсорах и перемещение меток датчиков
-//! через Shift+ЛКМ без конфликтов с навигационным контуром управления 3D-камерой.
+//! Обеспечивает наведение, плавную фокусировку на суставах/сенсорах, ручную настройку чувствительности
+//! и перемещение меток датчиков через Shift+ЛКМ без конфликтов с управлением 3D-камерой.
 
 use super::placement;
 use super::skeleton::skeleton;
@@ -9,58 +9,90 @@ use super::surface::raycast;
 use super::viewport::OrbitalCamera;
 use egui::{
     Area, Button, Context, CursorIcon, Frame, Id, Order, PointerButton, Rect, Response, RichText,
-    Ui,
+    Slider, Ui,
 };
 
-/// Панель справочной информации и прямого выбора фокусировки на суставах и датчиках.
+/// Панель справочной информации, быстрой фокусировки и пользовательских настроек чувствительности.
 fn show_tools(ctx: &Context, rect: Rect) {
     Area::new(Id::new("sensor_layout_tools"))
         .order(Order::Foreground)
-        .fixed_pos(rect.right_top() + egui::vec2(-285.0, 10.0))
+        .fixed_pos(rect.right_top() + egui::vec2(-295.0, 10.0))
         .show(ctx, |ui| {
             Frame::popup(ui.style()).show(ui, |ui| {
-                ui.set_width(265.0);
+                ui.set_width(275.0);
                 ui.label(RichText::new("Навигация 3D-камеры").strong());
-                ui.label("Вращение: ЛКМ  |  Осмотр: ПКМ\nПанорамирование: СКМ\nПолет: W/A/S/D  |  Поворот: Q/E\nВверх/Вниз: Space / Ctrl\nМасштабирование: Колесо мыши\nФокус на точку: 2x-ЛКМ");
+                ui.label("Вращение: ЛКМ  |  Осмотр: ПКМ\nПанорамирование: СКМ\nПолет: W/A/S/D  |  Поворот: Q/E\nВверх/Вниз: Space / Ctrl\nЗум: Колесо мыши (СКМ)");
 
                 ui.separator();
                 ui.label(RichText::new("Фокусировка").strong());
 
-                ui.horizontal(|ui| {
-                    if ui.button("🎯 Всё тело").clicked() {
+                ui.horizontal_wrapped(|ui| {
+                    if ui.button("🎯 Тело").on_hover_text("Общий вид тела в целом").clicked() {
                         placement::request_focus([0.0, 0.88, 0.0], 2.6);
                     }
-                    if ui.button("Голова").clicked() {
+                    if ui.button("Голова").on_hover_text("Фокус на голове").clicked() {
                         placement::request_focus([0.0, 1.68, 0.0], 0.45);
                     }
-                    if ui.button("Таз").clicked() {
-                        placement::request_focus([0.0, 0.94, -0.015], 0.55);
+                    if ui.button("Торс").on_hover_text("Верхняя часть туловища и грудь").clicked() {
+                        placement::request_focus([0.0, 1.35, 0.0], 0.65);
+                    }
+                    if ui.button("Таз").on_hover_text("Тазобедренная область").clicked() {
+                        placement::request_focus([0.0, 0.94, -0.015], 0.60);
+                    }
+                    if ui.button("Ноги").on_hover_text("Нижние конечности").clicked() {
+                        placement::request_focus([0.0, 0.45, 0.0], 1.10);
                     }
                 });
 
-                ui.horizontal(|ui| {
-                    ui.menu_button("Суставы ▼", |ui| {
-                        egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
-                            for j in &skeleton().joints {
-                                if ui.button(&j.name).clicked() {
-                                    placement::request_focus(j.pos, 0.35);
-                                    ui.close_menu();
-                                }
-                            }
-                        });
-                    });
+                ui.add_space(2.0);
+                ui.label(RichText::new("2x-ЛКМ по любому суставу или датчику — плавно сфокусироваться на нем.\n2x-ЛКМ по пустому фону — сброс вида на все тело.").italics().size(11.0));
 
-                    ui.menu_button("Датчики ▼", |ui| {
-                        egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
-                            for chip in &placement::chips() {
-                                if ui.button(chip.tag).clicked() {
-                                    placement::request_focus(chip.pos, 0.28);
-                                    ui.close_menu();
-                                }
-                            }
-                        });
+                ui.separator();
+                egui::CollapsingHeader::new(RichText::new("⚙ Чувствительность управления").strong())
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        let mut sens = placement::get_sensitivity();
+                        let mut modified = false;
+
+                        ui.label("Панорамирование (СКМ):");
+                        if ui.add(Slider::new(&mut sens.pan_speed, 0.2..=3.0).step_by(0.05)).changed() {
+                            modified = true;
+                        }
+
+                        ui.label("Зум (Колесо мыши):");
+                        if ui.add(Slider::new(&mut sens.zoom_speed, 0.2..=3.0).step_by(0.05)).changed() {
+                            modified = true;
+                        }
+
+                        ui.label("Полет (WASD / Space / Ctrl):");
+                        if ui.add(Slider::new(&mut sens.move_speed, 0.1..=3.0).step_by(0.05)).changed() {
+                            modified = true;
+                        }
+
+                        ui.label("Поворот (Q / E):");
+                        if ui.add(Slider::new(&mut sens.rot_speed, 0.1..=3.0).step_by(0.05)).changed() {
+                            modified = true;
+                        }
+
+                        ui.label("Орбитальное вращение (ЛКМ):");
+                        if ui.add(Slider::new(&mut sens.orbit_sens, 0.1..=3.0).step_by(0.05)).changed() {
+                            modified = true;
+                        }
+
+                        ui.label("Свободный осмотр (ПКМ):");
+                        if ui.add(Slider::new(&mut sens.free_look_sens, 0.1..=3.0).step_by(0.05)).changed() {
+                            modified = true;
+                        }
+
+                        if ui.button("Сброс к базовым").clicked() {
+                            sens = placement::CameraSensitivity::default();
+                            modified = true;
+                        }
+
+                        if modified {
+                            placement::set_sensitivity(sens);
+                        }
                     });
-                });
 
                 ui.separator();
                 ui.label(RichText::new("Позиционирование меток").strong());
@@ -146,14 +178,14 @@ pub fn handle(ui: &Ui, response: &Response, camera: &OrbitalCamera) -> bool {
         } else {
             ctx.set_cursor_icon(CursorIcon::PointingHand);
             response.clone().on_hover_text(format!(
-                "Датчик: {} [2x-ЛКМ: фокус камеры, Shift+ЛКМ: сдвиг]",
+                "Датчик: {} [2x-ЛКМ: плавный фокус, Shift+ЛКМ: сдвиг]",
                 placement::tag(id)
             ));
         }
     } else if let Some(j) = hover_joint {
         ctx.set_cursor_icon(CursorIcon::PointingHand);
         response.clone().on_hover_text(format!(
-            "Сустав: {} [2x-ЛКМ: фокус камеры]",
+            "Сустав: {} [2x-ЛКМ: плавный фокус]",
             j.name
         ));
     }

@@ -161,9 +161,6 @@ impl GlSceneRenderer {
             gl.enable_vertex_attrib_array(3);
 
             gl.bind_vertex_array(None);
-            gl.bind_buffer(glow::ARRAY_BUFFER, None);
-            gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, None);
-
             Ok(Self { program, vao, vbo, ebo })
         }
     }
@@ -551,9 +548,9 @@ pub fn draw_scene_3d(
         }
     }
 
-    // 4. Линии сетки горизонта (Y = 0) и объемные пространственные границы рабочей зоны (1.5x: 7.5x7.5 м)
-    let half = 3.75_f32;
-    let height = 3.30_f32;
+    // 4. Линии сетки горизонта (Y = 0) и объемные пространственные границы рабочей зоны (11.25x11.25x5.78 м)
+    let half = 5.625_f32;
+    let height = 5.775_f32;
     let step = 0.75_f32;
 
     let mut add_line = |p1: [f32; 3], p2: [f32; 3], color: [f32; 4]| {
@@ -570,43 +567,31 @@ pub fn draw_scene_3d(
     let col_cage_vert = [0.22, 0.48, 0.75, 0.45];
     let col_cage_top = [0.18, 0.36, 0.58, 0.35];
 
-    // Линии сетки пола вдоль оси Z
-    let mut x = -half;
-    while x <= half + 0.001 {
-        let is_edge = (x - half).abs() < 0.001 || (x + half).abs() < 0.001;
-        let color = if is_edge {
-            col_perimeter
-        } else if x.abs() < 0.001 {
-            col_z
-        } else {
-            col_grid
-        };
-        add_line([x, 0.0, -half], [x, 0.0, half], color);
-        x += step;
+    // Симметричный обход сетки от центра к краям (осевые линии x=0 и z=0 выделены)
+    let num_steps = (half / step).floor() as i32;
+    for i in -num_steps..=num_steps {
+        let x = i as f32 * step;
+        let col = if i == 0 { col_z } else { col_grid };
+        add_line([x, 0.0, -half], [x, 0.0, half], col);
+
+        let z = i as f32 * step;
+        let col_row = if i == 0 { col_x } else { col_grid };
+        add_line([-half, 0.0, z], [half, 0.0, z], col_row);
     }
 
-    // Линии сетки пола вдоль оси X
-    let mut z = -half;
-    while z <= half + 0.001 {
-        let is_edge = (z - half).abs() < 0.001 || (z + half).abs() < 0.001;
-        let color = if is_edge {
-            col_perimeter
-        } else if z.abs() < 0.001 {
-            col_x
-        } else {
-            col_grid
-        };
-        add_line([-half, 0.0, z], [half, 0.0, z], color);
-        z += step;
-    }
+    // Внешняя контурная рамка пола
+    add_line([-half, 0.0, -half], [half, 0.0, -half], col_perimeter);
+    add_line([half, 0.0, -half], [half, 0.0, half], col_perimeter);
+    add_line([half, 0.0, half], [-half, 0.0, half], col_perimeter);
+    add_line([-half, 0.0, half], [-half, 0.0, -half], col_perimeter);
 
-    // 4 угловых вертикальных пилона рабочей зоны (Y: 0.0 -> 3.30)
+    // 4 угловых вертикальных пилона рабочей зоны (Y: 0.0 -> 5.78)
     add_line([-half, 0.0, -half], [-half, height, -half], col_cage_vert);
     add_line([half, 0.0, -half], [half, height, -half], col_cage_vert);
     add_line([-half, 0.0, half], [-half, height, half], col_cage_vert);
     add_line([half, 0.0, half], [half, height, half], col_cage_vert);
 
-    // Верхняя рамка периметра рабочей зоны (Y = 3.30)
+    // Верхняя рамка периметра рабочей зоны (Y = 5.78)
     add_line([-half, height, -half], [half, height, -half], col_cage_top);
     add_line([half, height, -half], [half, height, half], col_cage_top);
     add_line([half, height, half], [-half, height, half], col_cage_top);

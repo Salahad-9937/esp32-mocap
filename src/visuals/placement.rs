@@ -1,7 +1,7 @@
 //! # Размещение и фиксация меток датчиков на теле (`placement`)
 //!
 //! Обеспечивает приклеивание 64 сенсорных плат к кривизне поверхности манекена,
-//! хранение пользовательских смещений и передачу команд фокусировки камеры.
+//! хранение пользовательских смещений, конфигурацию чувствительности камеры и передачу команд фокуса.
 
 use super::skeleton::{skeleton, Chip, SENSOR_COUNT};
 use super::surface::raycast;
@@ -12,6 +12,36 @@ use std::sync::{Mutex, OnceLock};
 pub const LAYOUT_FILE: &str = "sensor_layout.txt";
 /// Подъем плоскости метки над кожей манекена для устранения Z-файтинга (метры)
 const LIFT: f32 = 0.0022;
+
+/// Пользовательские настройки чувствительности всех видов перемещений 3D-камеры.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CameraSensitivity {
+    /// Множитель скорости панорамирования СКМ (базово +15%)
+    pub pan_speed: f32,
+    /// Множитель скорости зума колесом мыши
+    pub zoom_speed: f32,
+    /// Множитель скорости полета WASD / Space / Ctrl
+    pub move_speed: f32,
+    /// Множитель скорости рыскания QE
+    pub rot_speed: f32,
+    /// Множитель чувствительности орбитального вращения ЛКМ
+    pub orbit_sens: f32,
+    /// Множитель чувствительности свободного осмотра ПКМ
+    pub free_look_sens: f32,
+}
+
+impl Default for CameraSensitivity {
+    fn default() -> Self {
+        Self {
+            pan_speed: 1.15,
+            zoom_speed: 1.0,
+            move_speed: 1.0,
+            rot_speed: 1.0,
+            orbit_sens: 1.0,
+            free_look_sens: 1.0,
+        }
+    }
+}
 
 /// Дескриптор метки датчика, зафиксированной на поверхности тела.
 #[derive(Clone)]
@@ -39,11 +69,12 @@ struct State {
     custom: [Option<Custom>; SENSOR_COUNT],
     hover: Option<usize>,
     drag: Option<usize>,
+    sensitivity: CameraSensitivity,
 }
 
 static PENDING_FOCUS: Mutex<Option<(V3, f32)>> = Mutex::new(None);
 
-/// Резервирует команду фокусировки камеры на точке `pos`.
+/// Резервирует команду плавной фокусировки камеры на точке `pos`.
 pub fn request_focus(pos: V3, dist: f32) {
     if let Ok(mut lock) = PENDING_FOCUS.lock() {
         *lock = Some((pos, dist));
@@ -59,6 +90,17 @@ pub fn take_pending_focus() -> Option<(V3, f32)> {
 fn state() -> &'static Mutex<State> {
     static STATE: OnceLock<Mutex<State>> = OnceLock::new();
     STATE.get_or_init(|| Mutex::new(State::new()))
+}
+
+/// Возвращает текущие настройки чувствительности камеры.
+#[must_use]
+pub fn get_sensitivity() -> CameraSensitivity {
+    with(|s| s.sensitivity)
+}
+
+/// Обновляет параметры чувствительности камеры.
+pub fn set_sensitivity(sens: CameraSensitivity) {
+    with(|s| s.sensitivity = sens);
 }
 
 fn fit_tangent(hint: V3, n: V3) -> V3 {
@@ -131,6 +173,7 @@ impl State {
             custom: [None; SENSOR_COUNT],
             hover: None,
             drag: None,
+            sensitivity: CameraSensitivity::default(),
         };
         st.load();
         st

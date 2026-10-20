@@ -1,24 +1,35 @@
 //! # Интерактивная гибридная 3D-камера (`viewport`)
 //!
 //! Реализует непрерывный континуум навигации: орбитальное вращение (Orbit),
-//! свободный осмотр от первого лица (Free-Fly / Look-around), полет по WASD / QE / Space / Ctrl,
-//! контекстную фокусировку на датчиках/суставах и плоскостное панорамирование через СКМ.
-//! Содержит ограничитель точки наблюдения (глаза камеры) в пределах рабочей зоны 7.5x7.5 м.
+//! неинвертированный осмотр от первого лица (Free-Fly на ПКМ), настраиваемый полет по WASD / QE / Space / Ctrl,
+//! гарантированную фокусировку на суставах/датчиках и границы рабочей зоны 11.25x11.25x5.78 м.
 
+use super::placement;
 use super::skeleton::skeleton;
-use super::vec3::norm;
+use super::vec3::{dist, norm};
 use egui::{Pos2, Rect};
 
-/// Горизонтальный полуразмер рабочей зоны (метры, 1.5x от 2.5 м)
-pub const WORK_BOUND_XZ: f32 = 3.75;
+/// Горизонтальный полуразмер рабочей зоны (метры)
+pub const WORK_BOUND_XZ: f32 = 5.625;
 /// Нижняя граница положения глаза камеры по высоте (уровень пола)
 pub const WORK_BOUND_Y_MIN: f32 = 0.05;
-/// Верхняя граница положения глаза камеры по высоте (1.5x от 2.2 м)
-pub const WORK_BOUND_Y_MAX: f32 = 3.30;
+/// Верхняя граница положения глаза камеры по высоте
+pub const WORK_BOUND_Y_MAX: f32 = 5.775;
 /// Минимальная дистанция приближения к точке фокуса
 pub const MIN_CAMERA_DISTANCE: f32 = 0.18;
-/// Максимальная дистанция отката камеры
-pub const MAX_CAMERA_DISTANCE: f32 = 8.5;
+/// Максимальная дистанция отката камеры в рабочей зоне
+pub const MAX_CAMERA_DISTANCE: f32 = 12.0;
+
+/// Состояние активной плавной интерполяции фокуса камеры.
+#[derive(Debug, Clone, Copy)]
+struct FocusAnim {
+    start_target: [f32; 3],
+    goal_target: [f32; 3],
+    start_dist: f32,
+    goal_dist: f32,
+    elapsed: f32,
+    duration: f32,
+}
 
 /// Параметры гибридной интерактивной 3D-камеры.
 #[derive(Debug, Clone)]
@@ -33,6 +44,8 @@ pub struct OrbitalCamera {
     pub pitch: f32,
     /// Масштабный коэффициент поля зрения (FOV)
     pub fov_scale: f32,
+    /// Контроллер активной плавной интерполяции фокуса
+    focus_anim: Option<FocusAnim>,
 }
 
 impl Default for OrbitalCamera {
@@ -43,6 +56,7 @@ impl Default for OrbitalCamera {
             yaw: std::f32::consts::PI - 0.55,
             pitch: -0.10,
             fov_scale: 1.0,
+            focus_anim: None,
         }
     }
 }
@@ -107,7 +121,7 @@ impl OrbitalCamera {
             }
         }
 
-        if t_max > 1e-5 {
+        if t_max > 1e-4 {
             let actual = [delta[0] * t_max, delta[1] * t_max, delta[2] * t_max];
             self.target[0] += actual[0];
             self.target[1] += actual[1];
@@ -142,11 +156,17 @@ impl OrbitalCamera {
         }
     }
 
-    /// Фокусирует камеру на заданной 3D-точке пространства с установкой дистанции.
+    /// Инициирует плавный переход камеры к заданной 3D-точке фокусировки.
     pub fn focus_target(&mut self, point: [f32; 3], target_distance: f32) {
-        self.target = point;
-        self.distance = target_distance;
-        self.clamp_bounds();
+        let clamped_dist = target_distance.clamp(MIN_CAMERA_DISTANCE, MAX_CAMERA_DISTANCE);
+        self.focus_anim = Some(FocusAnim {
+            start_target: self.target,
+            goal_target: point,
+            start_dist: self.distance,
+            goal_dist: clamped_dist,
+            elapsed: 0.0,
+            duration: 0.28,
+        });
     }
 
     /// Базовый обработчик ввода для сохранения обратной совместимости.
@@ -154,7 +174,7 @@ impl OrbitalCamera {
         self.handle_input_ex(ui_response, scroll_delta, true);
     }
 
-    /// Расширенный гибридный обработчик навигации (Orbit / Free-Fly / WASD / Pan / Focus).
+    /// Расширенный гибридный обработчик навигации с поддержкой пользовательской чувствительности.
     pub fn handle_input_ex(
         &mut self,
         ui_response: &egui::Response,
@@ -163,119 +183,159 @@ impl OrbitalCamera {
     ) {
         let ctx = &ui_response.ctx;
         let rect = ui_response.rect;
+        let sens = placement::get_sensitivity();
         let mut changed = false;
 
-        // 1. Применение отложенного запроса фокусировки из меню/интерфейса
-        if let Some((target_pos, target_dist)) = crate::visuals::placement::take_pending_focus() {
+        // 1. Исполнение плавной интерполяции фокусировки (Smoothstep)
+        let dt = ctx.input(|i| i.stable_dt).min(0.05);
+        if let Some(mut anim) = self.focus_anim {
+            anim.elapsed += dt;
+            let progress = (anim.elapsed / anim.duration).clamp(0.0, 1.0);
+            let t = progress * progress * (3.0 - 2.0 * progress);
+
+            self.target[0] = anim.start_target[0] + (anim.goal_target[0] - anim.start_target[0]) * t;
+            self.target[1] = anim.start_target[1] + (anim.goal_target[1] - anim.start_target[1]) * t;
+            self.target[2] = anim.start_target[2] + (anim.goal_target[2] - anim.start_target[2]) * t;
+            self.distance = anim.start_dist + (anim.goal_dist - anim.start_dist) * t;
+
+            if progress >= 1.0 {
+                self.target = anim.goal_target;
+                self.distance = anim.goal_dist;
+                self.focus_anim = None;
+            } else {
+                self.focus_anim = Some(anim);
+            }
+
+            self.clamp_bounds();
+            ctx.request_repaint();
+        }
+
+        // 2. Применение запроса быстрой фокусировки из оверлейных кнопок
+        if let Some((target_pos, target_dist)) = placement::take_pending_focus() {
             self.focus_target(target_pos, target_dist);
             changed = true;
         }
 
         let is_shift = ctx.input(|i| i.modifiers.shift);
 
-        // 2. Двойной клик ЛКМ: контекстная фокусировка на датчике, суставе или поверхности
-        if allow_drag && !is_shift && ui_response.double_clicked_by(egui::PointerButton::Primary) {
+        // 3. Надежное определение 2x-ЛКМ на базе прямого опроса контекстных событий
+        let is_double_click = ui_response.hovered()
+            && allow_drag
+            && !is_shift
+            && ctx.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary));
+
+        if is_double_click {
             let click_pos = ctx
                 .input(|i| i.pointer.latest_pos())
                 .or_else(|| ui_response.interact_pointer_pos());
 
             if let Some(pos) = click_pos {
                 let (origin, dir) = self.ray_from_screen(pos, rect);
-                let eye = self.eye_position();
-                let mut best_target: Option<([f32; 3], f32, f32)> = None;
 
-                // А. Проверка попадания в чипы датчиков (порог 24 px на экране)
-                for chip in &crate::visuals::placement::chips() {
-                    if let Some(screen_p) = self.project(chip.pos, rect) {
-                        let d_screen = (screen_p.x - pos.x).hypot(screen_p.y - pos.y);
-                        if d_screen <= 24.0 {
-                            let d_cam = (chip.pos[0] - eye[0]).hypot(chip.pos[1] - eye[1]).hypot(chip.pos[2] - eye[2]);
-                            if best_target.as_ref().map_or(true, |b| d_cam < b.2) {
-                                best_target = Some((chip.pos, 0.28, d_cam));
-                            }
+                let mut best_target: Option<([f32; 3], f32)> = None;
+                let mut best_dist_to_ray = 0.12_f32;
+
+                // А. Проверка чипов сенсоров в 3D пространстве вдоль луча
+                for chip in &placement::chips() {
+                    let w = [chip.pos[0] - origin[0], chip.pos[1] - origin[1], chip.pos[2] - origin[2]];
+                    let t_ray = w[0] * dir[0] + w[1] * dir[1] + w[2] * dir[2];
+                    if t_ray > 0.05 {
+                        let proj = [origin[0] + dir[0] * t_ray, origin[1] + dir[1] * t_ray, origin[2] + dir[2] * t_ray];
+                        let d_perp = dist(chip.pos, proj);
+                        let screen_d = self.project(chip.pos, rect).map_or(999.0, |sp| (sp.x - pos.x).hypot(sp.y - pos.y));
+                        if d_perp < best_dist_to_ray || screen_d <= 30.0 {
+                            best_dist_to_ray = d_perp;
+                            best_target = Some((chip.pos, 0.30));
                         }
                     }
                 }
 
-                // Б. Проверка попадания в суставы скелета (порог 24 px на экране)
+                // Б. Проверка анатомических суставов скелета в 3D пространстве
                 for joint in &skeleton().joints {
-                    if let Some(screen_p) = self.project(joint.pos, rect) {
-                        let d_screen = (screen_p.x - pos.x).hypot(screen_p.y - pos.y);
-                        if d_screen <= 24.0 {
-                            let d_cam = (joint.pos[0] - eye[0]).hypot(joint.pos[1] - eye[1]).hypot(joint.pos[2] - eye[2]);
-                            if best_target.as_ref().map_or(true, |b| d_cam < b.2) {
-                                best_target = Some((joint.pos, 0.35, d_cam));
-                            }
+                    let w = [joint.pos[0] - origin[0], joint.pos[1] - origin[1], joint.pos[2] - origin[2]];
+                    let t_ray = w[0] * dir[0] + w[1] * dir[1] + w[2] * dir[2];
+                    if t_ray > 0.05 {
+                        let proj = [origin[0] + dir[0] * t_ray, origin[1] + dir[1] * t_ray, origin[2] + dir[2] * t_ray];
+                        let d_perp = dist(joint.pos, proj);
+                        let screen_d = self.project(joint.pos, rect).map_or(999.0, |sp| (sp.x - pos.x).hypot(sp.y - pos.y));
+                        if d_perp < best_dist_to_ray || screen_d <= 30.0 {
+                            best_dist_to_ray = d_perp;
+                            best_target = Some((joint.pos, 0.35));
                         }
                     }
                 }
 
-                // В. Проверка пересечения с полигональной поверхностью манекена
-                if let Some(hit) = crate::visuals::surface::raycast(origin, dir, 30.0) {
-                    let d_cam = hit.t;
-                    let surf_dist = (self.distance * 0.65).clamp(0.25, 1.8);
-                    if best_target.as_ref().map_or(true, |b| d_cam < b.2) {
-                        best_target = Some((hit.pos, surf_dist, d_cam));
+                // В. Проверка полигонального меша тела манекена
+                if best_target.is_none() {
+                    if let Some(hit) = crate::visuals::surface::raycast(origin, dir, 30.0) {
+                        best_target = Some((hit.pos, 0.45));
                     }
                 }
 
-                if let Some((target_pos, target_dist, _)) = best_target {
+                if let Some((target_pos, target_dist)) = best_target {
                     self.focus_target(target_pos, target_dist);
                 } else {
-                    // Клик в пустое пространство: возврат к общему плану тела
                     self.focus_target([0.0, 0.88, 0.0], 2.6);
                 }
                 changed = true;
             }
         }
 
-        // 3. Клавиатурная навигация: WASD (полет), QE (рыскание), Space (вверх), Ctrl (вниз)
+        // 4. Клавиатурная навигация с масштабируемой скоростью
         let has_kb_focus = ui_response.hovered() || ui_response.has_focus() || ui_response.dragged();
         if has_kb_focus && !ctx.wants_keyboard_input() {
             let fwd = self.forward();
             let r = self.right();
-            let move_speed = (self.distance * 0.032).clamp(0.015, 0.35);
-            let rot_speed = 0.038_f32;
+            let move_speed = (self.distance * 0.022).clamp(0.012, 0.22) * sens.move_speed;
+            let rot_speed = 0.030_f32 * sens.rot_speed;
 
             if ctx.input(|i| i.key_down(egui::Key::W)) {
+                self.focus_anim = None;
                 let delta = [fwd[0] * move_speed, fwd[1] * move_speed, fwd[2] * move_speed];
                 if self.apply_eye_translation(delta) {
                     changed = true;
                 }
             }
             if ctx.input(|i| i.key_down(egui::Key::S)) {
+                self.focus_anim = None;
                 let delta = [-fwd[0] * move_speed, -fwd[1] * move_speed, -fwd[2] * move_speed];
                 if self.apply_eye_translation(delta) {
                     changed = true;
                 }
             }
             if ctx.input(|i| i.key_down(egui::Key::A)) {
+                self.focus_anim = None;
                 let delta = [-r[0] * move_speed, -r[1] * move_speed, -r[2] * move_speed];
                 if self.apply_eye_translation(delta) {
                     changed = true;
                 }
             }
             if ctx.input(|i| i.key_down(egui::Key::D)) {
+                self.focus_anim = None;
                 let delta = [r[0] * move_speed, r[1] * move_speed, r[2] * move_speed];
                 if self.apply_eye_translation(delta) {
                     changed = true;
                 }
             }
             if ctx.input(|i| i.key_down(egui::Key::Q)) {
+                self.focus_anim = None;
                 self.yaw -= rot_speed;
                 changed = true;
             }
             if ctx.input(|i| i.key_down(egui::Key::E)) {
+                self.focus_anim = None;
                 self.yaw += rot_speed;
                 changed = true;
             }
             if ctx.input(|i| i.key_down(egui::Key::Space)) {
+                self.focus_anim = None;
                 let delta = [0.0, move_speed, 0.0];
                 if self.apply_eye_translation(delta) {
                     changed = true;
                 }
             }
             if ctx.input(|i| i.modifiers.ctrl || i.modifiers.command) {
+                self.focus_anim = None;
                 let delta = [0.0, -move_speed, 0.0];
                 if self.apply_eye_translation(delta) {
                     changed = true;
@@ -283,7 +343,7 @@ impl OrbitalCamera {
             }
         }
 
-        // 4. Опрос состояния мыши и кнопок
+        // 5. Опрос мыши с настраиваемыми множителями
         let is_rmb = ctx.input(|i| i.pointer.button_down(egui::PointerButton::Secondary));
         let is_mmb = ctx.input(|i| i.pointer.button_down(egui::PointerButton::Middle));
         let is_lmb = ctx.input(|i| i.pointer.button_down(egui::PointerButton::Primary));
@@ -291,10 +351,10 @@ impl OrbitalCamera {
 
         if (ui_response.hovered() || ui_response.dragged()) && (delta.x != 0.0 || delta.y != 0.0) {
             if is_mmb {
-                // Панорамирование (СКМ): строгое смещение 1:1, останавливающееся у границы
+                self.focus_anim = None;
                 let fov_rad = 0.785398_f32 / self.fov_scale.clamp(0.1, 4.0);
                 let f_proj = 1.0 / (fov_rad * 0.5).tan().max(1e-4);
-                let pan_factor = (2.0 * self.distance) / (f_proj * rect.height().max(1.0));
+                let pan_factor = ((2.0 * self.distance) / (f_proj * rect.height().max(1.0))) * sens.pan_speed;
 
                 let r = self.right();
                 let u = self.up();
@@ -306,10 +366,9 @@ impl OrbitalCamera {
                     changed = true;
                 }
             } else if is_rmb {
-                // Осмотр от первого лица (ПКМ): вращение на месте вокруг точки наблюдения
                 let eye = self.eye_position();
-                self.yaw -= delta.x * 0.005;
-                self.pitch = (self.pitch + delta.y * 0.005).clamp(-1.52, 1.52);
+                self.yaw += delta.x * 0.004 * sens.free_look_sens;
+                self.pitch = (self.pitch - delta.y * 0.004 * sens.free_look_sens).clamp(-1.52, 1.52);
 
                 let fwd = self.forward();
                 self.target = [
@@ -320,17 +379,16 @@ impl OrbitalCamera {
                 self.clamp_bounds();
                 changed = true;
             } else if is_lmb && allow_drag && !is_shift {
-                // Орбитальное вращение (ЛКМ без Shift): поворот по сфере вокруг фокальной точки
-                self.yaw -= delta.x * 0.006;
-                self.pitch = (self.pitch + delta.y * 0.006).clamp(-1.52, 1.52);
+                self.yaw -= delta.x * 0.006 * sens.orbit_sens;
+                self.pitch = (self.pitch + delta.y * 0.006 * sens.orbit_sens).clamp(-1.52, 1.52);
                 self.clamp_bounds();
                 changed = true;
             }
         }
 
-        // 5. Зум с выталкиванием точки фокуса при сближении (Pivot Pushing)
+        // 6. Зум колесом мыши с прямым множителем чувствительности
         if ui_response.hovered() && scroll_delta != 0.0 {
-            let zoom_factor = 1.0 - scroll_delta * 0.0018;
+            let zoom_factor = 1.0 - scroll_delta * 0.0035 * sens.zoom_speed;
             let next_dist = self.distance * zoom_factor;
             if next_dist < MIN_CAMERA_DISTANCE {
                 let push = (MIN_CAMERA_DISTANCE - next_dist).clamp(0.01, 0.45);
