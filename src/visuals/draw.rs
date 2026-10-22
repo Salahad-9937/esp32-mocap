@@ -72,14 +72,19 @@ pub fn draw_scene_3d(
     }
 
     let highlighted = placement::highlight();
+    let selected = placement::selected();
+
     for (st, q) in chips.iter().zip(quats) {
-        let color = if highlighted == Some(st.id) {
-            [0.45, 0.85, 1.0, 1.0]
+        let color = if selected == Some(st.id) {
+            [1.0, 0.88, 0.20, 1.0] // Золотой: выбранный для настройки
+        } else if highlighted == Some(st.id) {
+            [0.45, 0.85, 1.0, 1.0] // Светло-голубой: под курсором
         } else if q.is_some() {
-            [0.15, 0.95, 0.35, 1.0]
+            [0.18, 0.92, 0.35, 1.0] // Зеленый: назначен и активен
         } else {
-            [1.0, 0.84, 0.12, 1.0]
+            [0.48, 0.52, 0.62, 0.90] // Стальной: свободный/не привязанный
         };
+
         let base = tri_vertices.len() as u32;
         for k in 0..9 {
             tri_vertices.push(GlVertex { pos: st.patch[k], normal: st.patch_n[k], color, ao: 1.0 });

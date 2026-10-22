@@ -33,6 +33,7 @@ impl Default for CameraSensitivity {
 struct State {
     layout: SensorLayoutManager,
     hover: Option<usize>,
+    selected: Option<usize>,
     drag: Option<usize>,
     sensitivity: CameraSensitivity,
 }
@@ -56,6 +57,7 @@ fn state() -> &'static Mutex<State> {
         Mutex::new(State {
             layout: SensorLayoutManager::new(),
             hover: None,
+            selected: None,
             drag: None,
             sensitivity: CameraSensitivity::default(),
         })
@@ -84,6 +86,25 @@ pub fn chips() -> Vec<PlacedChip> {
 #[must_use]
 pub fn highlight() -> Option<usize> {
     with(|s| s.drag.or(s.hover))
+}
+
+#[must_use]
+pub fn selected() -> Option<usize> {
+    with(|s| s.selected)
+}
+
+pub fn set_selected(sel: Option<usize>) {
+    with(|s| s.selected = sel);
+}
+
+pub fn select_by_tag(tag: &str) {
+    let id = skeleton().sites.iter().position(|s| s.tag == tag);
+    with(|s| s.selected = id);
+}
+
+#[must_use]
+pub fn selected_tag() -> Option<&'static str> {
+    with(|s| s.selected.and_then(|id| skeleton().sites.get(id).map(|site| site.tag)))
 }
 
 #[must_use]

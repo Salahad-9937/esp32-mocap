@@ -41,7 +41,7 @@ fn show_tools(ctx: &Context, rect: Rect) {
                 });
 
                 ui.add_space(2.0);
-                ui.label(RichText::new("2x-ЛКМ по любому суставу или датчику — плавно сфокусироваться на нем.\n2x-ЛКМ по пустому фону — сброс вида на все тело.").italics().size(11.0));
+                ui.label(RichText::new("ЛКМ по площадке — выбрать сегмент для маппинга.\n2x-ЛКМ — сфокусировать камеру на объекте.").italics().size(11.0));
 
                 ui.separator();
                 egui::CollapsingHeader::new(RichText::new("⚙ Чувствительность управления").strong())
@@ -136,6 +136,11 @@ pub fn handle(ui: &Ui, response: &Response, camera: &OrbitalCamera) -> bool {
         ctx.request_repaint();
     }
 
+    if response.clicked_by(PointerButton::Primary) && !is_shift_active && hover_chip.is_some() {
+        placement::set_selected(hover_chip);
+        ctx.request_repaint();
+    }
+
     let hover_joint = if hover_chip.is_none() && response.hovered() {
         response.hover_pos().and_then(|pos| {
             skeleton().joints.iter().find(|j| {
@@ -167,8 +172,10 @@ pub fn handle(ui: &Ui, response: &Response, camera: &OrbitalCamera) -> bool {
             }
         } else {
             ctx.set_cursor_icon(CursorIcon::PointingHand);
+            let is_sel = placement::selected() == Some(id);
+            let sel_suffix = if is_sel { " [ВЫБРАН ДЛЯ МАППИНГА]" } else { " [ЛКМ: выбрать]" };
             response.clone().on_hover_text(format!(
-                "Датчик: {} [2x-ЛКМ: плавный фокус, Shift+ЛКМ: сдвиг]",
+                "Датчик: {}{sel_suffix}\n2x-ЛКМ: фокус камеры",
                 placement::tag(id)
             ));
         }

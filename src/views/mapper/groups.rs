@@ -1,0 +1,121 @@
+//! # Анатомическая категоризация и локализация сегментов скелета (`groups`)
+
+pub struct AnatomyCluster {
+    pub title: &'static str,
+    pub bones: &'static [&'static str],
+}
+
+pub const ANATOMY_CLUSTERS: &[AnatomyCluster] = &[
+    AnatomyCluster {
+        title: "Осевой скелет и голова (8)",
+        bones: &[
+            "Head", "Neck", "SpineT3", "SpineT7", "SpineT11", "SpineL3", "Sacrum", "Sternum",
+        ],
+    },
+    AnatomyCluster {
+        title: "Плечевой пояс и руки (14)",
+        bones: &[
+            "LeftClavicle", "RightClavicle", "LeftShoulder", "RightShoulder",
+            "LeftUpperArmProx", "LeftUpperArmDist", "LeftForearmProx", "LeftForearmDist", "LeftHand",
+            "RightUpperArmProx", "RightUpperArmDist", "RightForearmProx", "RightForearmDist", "RightHand",
+        ],
+    },
+    AnatomyCluster {
+        title: "Левая кисть — 15 фаланг",
+        bones: &[
+            "LeftThumbMeta", "LeftThumbProx", "LeftThumbDist",
+            "LeftIndexProx", "LeftIndexMid", "LeftIndexDist",
+            "LeftMiddleProx", "LeftMiddleMid", "LeftMiddleDist",
+            "LeftRingProx", "LeftRingMid", "LeftRingDist",
+            "LeftPinkyProx", "LeftPinkyMid", "LeftPinkyDist",
+        ],
+    },
+    AnatomyCluster {
+        title: "Правая кисть — 15 фаланг",
+        bones: &[
+            "RightThumbMeta", "RightThumbProx", "RightThumbDist",
+            "RightIndexProx", "RightIndexMid", "RightIndexDist",
+            "RightMiddleProx", "RightMiddleMid", "RightMiddleDist",
+            "RightRingProx", "RightRingMid", "RightRingDist",
+            "RightPinkyProx", "RightPinkyMid", "RightPinkyDist",
+        ],
+    },
+    AnatomyCluster {
+        title: "Нижние конечности и стопы (12)",
+        bones: &[
+            "LeftThighProx", "LeftThighDist", "LeftShankProx", "LeftShankDist", "LeftFoot", "LeftToe",
+            "RightThighProx", "RightThighDist", "RightShankProx", "RightShankDist", "RightFoot", "RightToe",
+        ],
+    },
+];
+
+#[must_use]
+pub fn friendly_bone_name(tag: &str) -> &'static str {
+    match tag {
+        "Head" => "Голова (Лобная кость)",
+        "Neck" => "Шея (Позвонок C5)",
+        "SpineT3" => "Верх грудного отдела (T3)",
+        "SpineT7" => "Середина грудного отдела (T7)",
+        "SpineT11" => "Низ грудного отдела (T11)",
+        "SpineL3" => "Поясничный отдел (L3)",
+        "Sacrum" => "Крестец / Таз",
+        "Sternum" => "Грудина (Спереди)",
+        "LeftClavicle" => "Левая ключица",
+        "RightClavicle" => "Правая ключица",
+        "LeftShoulder" => "Левое плечо (Акромион)",
+        "RightShoulder" => "Правое плечо (Акромион)",
+        "LeftUpperArmProx" => "Левое плечо (Проксимально)",
+        "LeftUpperArmDist" => "Левое плечо (Дистально)",
+        "LeftForearmProx" => "Левое предплечье (Локтевая)",
+        "LeftForearmDist" => "Левое предплечье (Лучевая)",
+        "LeftHand" => "Левая кисть (Тыл)",
+        "RightUpperArmProx" => "Правое плечо (Проксимально)",
+        "RightUpperArmDist" => "Правое плечо (Дистально)",
+        "RightForearmProx" => "Правое предплечье (Локтевая)",
+        "RightForearmDist" => "Правое предплечье (Лучевая)",
+        "RightHand" => "Правая кисть (Тыл)",
+        "LeftThumbMeta" => "Л. Большой палец (1-я пястная)",
+        "LeftThumbProx" => "Л. Большой палец (Прокс. фаланга)",
+        "LeftThumbDist" => "Л. Большой палец (Дист. фаланга)",
+        "LeftIndexProx" => "Л. Указательный (Прокс. фаланга)",
+        "LeftIndexMid" => "Л. Указательный (Средняя фаланга)",
+        "LeftIndexDist" => "Л. Указательный (Дист. фаланга)",
+        "LeftMiddleProx" => "Л. Средний (Прокс. фаланга)",
+        "LeftMiddleMid" => "Л. Средний (Средняя фаланга)",
+        "LeftMiddleDist" => "Л. Средний (Дист. фаланга)",
+        "LeftRingProx" => "Л. Безымянный (Прокс. фаланга)",
+        "LeftRingMid" => "Л. Безымянный (Средняя фаланга)",
+        "LeftRingDist" => "Л. Безымянный (Дист. фаланга)",
+        "LeftPinkyProx" => "Л. Мизинец (Прокс. фаланга)",
+        "LeftPinkyMid" => "Л. Мизинец (Средняя фаланга)",
+        "LeftPinkyDist" => "Л. Мизинец (Дист. фаланга)",
+        "RightThumbMeta" => "П. Большой палец (1-я пястная)",
+        "RightThumbProx" => "П. Большой палец (Прокс. фаланга)",
+        "RightThumbDist" => "П. Большой палец (Дист. фаланга)",
+        "RightIndexProx" => "П. Указательный (Прокс. фаланга)",
+        "RightIndexMid" => "П. Указательный (Средняя фаланга)",
+        "RightIndexDist" => "П. Указательный (Дист. фаланга)",
+        "RightMiddleProx" => "П. Средний (Прокс. фаланга)",
+        "RightMiddleMid" => "П. Средний (Средняя фаланга)",
+        "RightMiddleDist" => "П. Средний (Дист. фаланга)",
+        "RightRingProx" => "П. Безымянный (Прокс. фаланга)",
+        "RightRingMid" => "П. Безымянный (Средняя фаланга)",
+        "RightRingDist" => "П. Безымянный (Дист. фаланга)",
+        "RightPinkyProx" => "П. Мизинец (Прокс. фаланга)",
+        "RightPinkyMid" => "П. Мизинец (Средняя фаланга)",
+        "RightPinkyDist" => "П. Мизинец (Дист. фаланга)",
+        "LeftThighProx" => "Левое бедро (Верхняя треть)",
+        "LeftThighDist" => "Левое бедро (Нижняя треть)",
+        "LeftShankProx" => "Левая голень (Верхняя треть)",
+        "LeftShankDist" => "Левая голень (Нижняя треть)",
+        "LeftFoot" => "Левая стопа (Плюсна)",
+        "LeftToe" => "Левый большой палец стопы",
+        "RightThighProx" => "Правое бедро (Верхняя треть)",
+        "RightThighDist" => "Правое бедро (Нижняя треть)",
+        "RightShankProx" => "Правая голень (Верхняя треть)",
+        "RightShankDist" => "Правая голень (Нижняя треть)",
+        "RightFoot" => "Правая стопа (Плюсна)",
+        "RightToe" => "Правый большой палец стопы",
+        _ => "Сегмент скелета",
+    }
+}
