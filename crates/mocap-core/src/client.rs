@@ -13,6 +13,7 @@ pub struct ProcessedNode {
     pub node_index: usize,
     pub mux_address: u8,
     pub channel: u8,
+    pub sensor_address: u8,
     pub bone_name: Option<String>,
     pub sample: ImuSample,
     pub orientation: Quaternion,
@@ -22,6 +23,7 @@ pub struct ProcessedNode {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProcessedFrame {
     pub sequence_id: u16,
+    pub mux_mask: u8,
     pub nodes: Vec<ProcessedNode>,
 }
 
@@ -56,7 +58,7 @@ impl MocapProcessor {
 
     /// Инициирует процедуру калибровки смещения нуля гироскопов в покое.
     pub fn start_calibration(&mut self, target_samples: usize) {
-        self.bias_estimator = Some(BiasEstimator::new(64, target_samples));
+        self.bias_estimator = Some(BiasEstimator::new(128, target_samples));
     }
 
     /// Проверяет активность процедуры калибровки.
@@ -128,12 +130,13 @@ impl MocapProcessor {
         for (idx, raw_node) in raw_frame.nodes.iter().enumerate() {
             let sample = self.calibrator.calibrate_node(idx, raw_node);
             let orientation = self.filters[idx].update(&sample, dt);
-            let bone_name = self.mapping.get_bone(raw_node.mux_address, raw_node.channel).map(String::from);
+            let bone_name = self.mapping.get_bone(raw_node.mux_address, raw_node.channel, raw_node.sensor_address).map(String::from);
 
             processed_nodes.push(ProcessedNode {
                 node_index: idx,
                 mux_address: raw_node.mux_address,
                 channel: raw_node.channel,
+                sensor_address: raw_node.sensor_address,
                 bone_name,
                 sample,
                 orientation,
@@ -142,6 +145,7 @@ impl MocapProcessor {
 
         ProcessedFrame {
             sequence_id: raw_frame.sequence_id,
+            mux_mask: raw_frame.mux_mask,
             nodes: processed_nodes,
         }
     }

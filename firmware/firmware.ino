@@ -8,10 +8,11 @@
 // Статический пул зарегистрированных активных узлов
 static ActiveNode active_nodes[MAX_ACTIVE_SENSORS];
 static uint8_t active_node_count = 0;
+static uint8_t detected_mux_mask = 0;
 
-// Статические буферы данных (14 байт на узел: MUX + CH + 12B IMU)
+// Статические буферы данных (15 байт на узел: MUX + CH + ADDR + 12B IMU)
 static uint8_t raw_payload_buffer[MAX_ACTIVE_SENSORS * NODE_PAYLOAD_SIZE];
-static uint8_t tx_frame_buffer[7 + MAX_ACTIVE_SENSORS * NODE_PAYLOAD_SIZE];
+static uint8_t tx_frame_buffer[8 + MAX_ACTIVE_SENSORS * NODE_PAYLOAD_SIZE];
 static uint16_t frame_sequence_counter = 0;
 
 // Состояние отладки и интервалов
@@ -29,8 +30,8 @@ void execute_system_soft_restart() {
     Serial.println("[SYSTEM] Запущен программный перезапуск симуляционного контура...");
 
     i2c_bus_recover();
-    active_node_count = bus_scan_and_init(active_nodes, MAX_ACTIVE_SENSORS);
-    print_startup_diagnostics(active_nodes, active_node_count);
+    active_node_count = bus_scan_and_init(active_nodes, MAX_ACTIVE_SENSORS, &detected_mux_mask);
+    print_startup_diagnostics(active_nodes, active_node_count, detected_mux_mask);
 
     frame_sequence_counter = 0;
     last_frame_micros = micros();
@@ -96,10 +97,11 @@ void loop() {
         return;
     }
 
-    // Опрос узлов с упаковкой физического MUX и Channel в тело пакета
+    // Опрос узлов с сохранением MUX, Channel и SensorAddress в тело пакета
     for (uint8_t i = 0; i < active_node_count; i++) {
         uint8_t mux_addr = active_nodes[i].mux_address;
         uint8_t ch = active_nodes[i].channel;
+        uint8_t s_addr = active_nodes[i].sensor_address;
 
         mux_select_channel(mux_addr, ch);
         delayMicroseconds(15);
@@ -107,9 +109,10 @@ void loop() {
         uint8_t *dest = &raw_payload_buffer[i * NODE_PAYLOAD_SIZE];
         dest[0] = mux_addr;
         dest[1] = ch;
+        dest[2] = s_addr;
 
-        if (!bmi160_burst_read_data(BMI160_I2C_ADDR, &dest[2])) {
-            memset(&dest[2], 0, 12);
+        if (!bmi160_burst_read_data(s_addr, &dest[3])) {
+            memset(&dest[3], 0, 12);
         }
 
         mux_disable_all(mux_addr);
@@ -119,6 +122,7 @@ void loop() {
     size_t frame_size = build_binary_frame(
         frame_sequence_counter++,
         active_node_count,
+        detected_mux_mask,
         raw_payload_buffer,
         tx_frame_buffer
     );
@@ -127,6 +131,7 @@ void loop() {
 
     if (debug_telemetry_enabled && (millis() - last_debug_print_millis >= DEBUG_PRINT_INTERVAL_MS)) {
         last_debug_print_millis = millis();
-        Serial.printf("[FRAME #%05u] Узлов: %d | Размер: %u Б\n", frame_sequence_counter, active_node_count, frame_size);
+        Serial.printf("[FRAME #%05u] Узлов: %d | Маска MUX: 0x%02X | Размер: %u Б\n",
+                      frame_sequence_counter, active_node_count, detected_mux_mask, frame_size);
     }
 }

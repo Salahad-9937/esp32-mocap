@@ -15,9 +15,11 @@
 // 3. Адресация оборудования
 #define MUX_ADDR_BASE           0x70    // Базовый адрес мультиплексоров (0x70 .. 0x77)
 #define MUX_COUNT_MAX           8       // Максимальное количество PCA9548A
-#define CHANNELS_PER_MUX        8       // Количество каналов на мультиплексор
-#define BMI160_I2C_ADDR         0x68    // Аппаратный адрес датчика (SA0 на GND)
-#define MAX_ACTIVE_SENSORS      64      // Максимальная емкость системы (8x8)
+#define CHANNELS_PER_MUX        8       // Количество подканалов на мультиплексор
+#define BMI160_I2C_ADDR_LOW     0x68    // Аппаратный адрес датчика (SA0 на GND)
+#define BMI160_I2C_ADDR_HIGH    0x69    // Аппаратный адрес датчика (SA0 на 3.3V)
+#define BMI160_I2C_ADDR         0x68    // Базовый адрес для обратной совместимости
+#define MAX_ACTIVE_SENSORS      128     // Максимальная емкость (8 MUX x 8 CH x 2 ADDR)
 
 // 4. Регистры микросхемы Bosch BMI160
 #define BMI160_REG_CHIP_ID      0x00
@@ -37,12 +39,12 @@
 #define BMI160_CMD_ACC_NORMAL   0x11
 #define BMI160_CMD_GYR_NORMAL   0x15
 
-// 5. Настройки бинарного протокола (14 байт на узел: MUX + CH + 12B IMU)
+// 5. Настройки бинарного протокола (15 байт на узел: MUX + CH + ADDR + 12B IMU)
 #define BT_DEVICE_NAME          "ESP32_MOCAP_HUB"
 #define FRAME_PREAMBLE_0        0xAA
 #define FRAME_PREAMBLE_1        0x55
 #define TARGET_FPS              70
-#define NODE_PAYLOAD_SIZE       14      // 1B MUX + 1B Channel + 12B IMU
+#define NODE_PAYLOAD_SIZE       15      // 1B MUX + 1B Channel + 1B SensorAddr + 12B IMU
 
 // 6. Флаги отладки
 #define DEFAULT_DEBUG_TELEMETRY false
@@ -52,6 +54,7 @@
 struct ActiveNode {
     uint8_t mux_address;
     uint8_t channel;
+    uint8_t sensor_address;
 };
 
 #endif

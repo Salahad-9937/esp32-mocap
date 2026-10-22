@@ -84,7 +84,7 @@ fn run_stream_loop(
     processor: &mut MocapProcessor,
     shared: &SharedStateHandle,
 ) {
-    let mut read_chunk = [0u8; 512];
+    let mut read_chunk = [0u8; 1024];
     let mut last_seq_id: Option<u16> = None;
     let mut frame_count_sec = 0u32;
     let mut last_fps_timer = Instant::now();
@@ -125,6 +125,8 @@ fn run_stream_loop(
                 };
 
                 for frame in frames {
+                    shared.detected_mux_mask.store(frame.mux_mask, Ordering::Relaxed);
+
                     if let Some(last_id) = last_seq_id {
                         let diff = frame.sequence_id.wrapping_sub(last_id);
                         if diff > 1 {
@@ -144,9 +146,11 @@ fn run_stream_loop(
                         telemetry_nodes.push(NodeTelemetry {
                             mux_address: node.mux_address,
                             channel: node.channel,
+                            sensor_address: node.sensor_address,
                             raw: mocap_core::protocol::RawNodeData {
                                 mux_address: node.mux_address,
                                 channel: node.channel,
+                                sensor_address: node.sensor_address,
                                 gyr_x: node.sample.raw_gyro[0],
                                 gyr_y: node.sample.raw_gyro[1],
                                 gyr_z: node.sample.raw_gyro[2],
@@ -164,7 +168,9 @@ fn run_stream_loop(
                     if let Ok(mut nodes_guard) = shared.nodes.lock() {
                         for new_node in &mut telemetry_nodes {
                             if let Some(old_node) = nodes_guard.iter().find(|n| {
-                                n.mux_address == new_node.mux_address && n.channel == new_node.channel
+                                n.mux_address == new_node.mux_address
+                                    && n.channel == new_node.channel
+                                    && n.sensor_address == new_node.sensor_address
                             }) {
                                 new_node.peak_energy = new_node.peak_energy.max(old_node.peak_energy * 0.95);
                             }
@@ -217,6 +223,7 @@ fn reset_shared_metrics(shared: &SharedStateHandle, error_msg: Option<String>) {
     if let Ok(mut fps_guard) = shared.calculated_fps.lock() {
         *fps_guard = 0.0;
     }
+    shared.detected_mux_mask.store(0, Ordering::Relaxed);
 }
 
 fn clear_connection_error(shared: &SharedStateHandle) {

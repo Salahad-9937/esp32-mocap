@@ -92,9 +92,15 @@ impl MapperView {
     pub fn load_profile(&mut self, path: &Path) {
         if let Ok(p) = MappingProfile::load_from_file(path) {
             let mut migrated = HashMap::new();
-            for (channel, legacy_bone) in p.mappings {
+            for (raw_channel, legacy_bone) in p.mappings {
+                let canonical_channel = if raw_channel.matches(':').count() == 1 {
+                    format!("{raw_channel}:0x68")
+                } else {
+                    raw_channel
+                };
+
                 if let Some(canonical) = Self::migrate_legacy_bone_name(&legacy_bone) {
-                    migrated.insert(channel, canonical.to_string());
+                    migrated.insert(canonical_channel, canonical.to_string());
                 }
             }
             self.profile = MappingProfile {
@@ -105,8 +111,8 @@ impl MapperView {
     }
 
     pub fn show(&mut self, ui: &mut Ui, shared: &SharedStateHandle, profile_path: &Path) {
-        ui.heading("Маппинг датчиков на скелет (64 узла)");
-        ui.label("Назначьте физический канал коммутатора на сегмент скелета.");
+        ui.heading("Маппинг датчиков на скелет (до 128 узлов)");
+        ui.label("Назначьте физический канал коммутатора и адрес на сегмент скелета.");
         ui.add_space(4.0);
 
         let nodes = shared.nodes.lock().map(|g| g.clone()).unwrap_or_default();
@@ -117,7 +123,7 @@ impl MapperView {
             let total_dur = Duration::from_secs(2);
 
             for node in &nodes {
-                let key = MappingProfile::channel_key(node.mux_address, node.channel);
+                let key = MappingProfile::channel_key(node.mux_address, node.channel, node.sensor_address);
                 *self.accumulated_energies.entry(key).or_default() += node.peak_energy;
             }
 
@@ -172,7 +178,7 @@ impl MapperView {
                         ui.end_row();
 
                         for (i, node) in nodes.iter().enumerate() {
-                            let key = MappingProfile::channel_key(node.mux_address, node.channel);
+                            let key = MappingProfile::channel_key(node.mux_address, node.channel, node.sensor_address);
                             ui.label(RichText::new(format!("#{i} [{key}]")).monospace());
 
                             let norm_energy = (node.peak_energy / 8.0).clamp(0.0, 1.0);
@@ -186,7 +192,7 @@ impl MapperView {
                                 egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
                                     for &bone in &TARGET_BONES {
                                         if ui.button(bone).clicked() {
-                                            self.profile.mappings.insert(key.clone(), bone.to_string());
+                                            self.profile.set_mapping(node.mux_address, node.channel, node.sensor_address, bone);
                                             if let Ok(mut prof) = shared.mapping_profile.lock() {
                                                 *prof = self.profile.clone();
                                             }
@@ -196,7 +202,7 @@ impl MapperView {
                                 });
                                 ui.separator();
                                 if ui.button("Снять привязку").clicked() {
-                                    self.profile.mappings.remove(&key);
+                                    self.profile.remove_mapping(node.mux_address, node.channel, node.sensor_address);
                                     if let Ok(mut prof) = shared.mapping_profile.lock() {
                                         *prof = self.profile.clone();
                                     }
@@ -211,7 +217,7 @@ impl MapperView {
         });
 
         ui.add_space(8.0);
-        ui.heading("Реестр 64 сегментов скелета");
+        ui.heading("Реестр 64 целевых сегментов скелета");
 
         ui.group(|ui| {
             egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {

@@ -4,7 +4,7 @@ use mocap_core::calibration::NodeBias;
 use mocap_core::mapping::MappingProfile;
 use mocap_core::protocol::RawNodeData;
 use mocap_core::types::ImuSample;
-use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -16,6 +16,7 @@ pub type CalibratedMeasurement = ImuSample;
 pub struct NodeTelemetry {
     pub mux_address: u8,
     pub channel: u8,
+    pub sensor_address: u8,
     pub raw: RawNodeData,
     pub calibrated: ImuSample,
     pub orientation_quat: [f32; 4],
@@ -28,6 +29,7 @@ impl Default for NodeTelemetry {
         Self {
             mux_address: 0x70,
             channel: 0,
+            sensor_address: 0x68,
             raw: RawNodeData::default(),
             calibrated: ImuSample::default(),
             orientation_quat: [1.0, 0.0, 0.0, 0.0],
@@ -59,6 +61,7 @@ pub struct StreamStats {
 #[derive(Debug)]
 pub struct SharedTelemetryState {
     pub nodes: Mutex<Vec<NodeTelemetry>>,
+    pub detected_mux_mask: AtomicU8,
     pub stats: StreamStats,
     pub is_running: AtomicBool,
     pub is_paused: AtomicBool,
@@ -78,6 +81,7 @@ impl Default for SharedTelemetryState {
     fn default() -> Self {
         Self {
             nodes: Mutex::new(Vec::new()),
+            detected_mux_mask: AtomicU8::new(0),
             stats: StreamStats::default(),
             is_running: AtomicBool::new(false),
             is_paused: AtomicBool::new(false),

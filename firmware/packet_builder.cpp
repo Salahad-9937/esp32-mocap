@@ -18,6 +18,7 @@ uint16_t crc16_ccitt(const uint8_t *data, size_t length) {
 size_t build_binary_frame(
     uint16_t sequence_id,
     uint8_t node_count,
+    uint8_t mux_mask,
     const uint8_t *raw_payload,
     uint8_t *out_frame_buffer
 ) {
@@ -34,16 +35,19 @@ size_t build_binary_frame(
     // 3. Количество переданных узлов
     out_frame_buffer[4] = node_count;
 
-    // 4. Полезная нагрузка (N * 14 байт)
+    // 4. Битовая маска обнаруженных мультиплексоров (биты 0..7 = MUX 0x70..0x77)
+    out_frame_buffer[5] = mux_mask;
+
+    // 5. Полезная нагрузка (N * 15 байт)
     if (payload_len > 0 && raw_payload != nullptr) {
-        memcpy(&out_frame_buffer[5], raw_payload, payload_len);
+        memcpy(&out_frame_buffer[6], raw_payload, payload_len);
     }
 
-    // 5. Контрольная сумма CRC-16
-    size_t crc_calc_len = 3 + payload_len;
+    // 6. Контрольная сумма CRC-16 (от счетчика до конца полезной нагрузки)
+    size_t crc_calc_len = 4 + payload_len;
     uint16_t checksum = crc16_ccitt(&out_frame_buffer[2], crc_calc_len);
 
-    size_t crc_offset = 5 + payload_len;
+    size_t crc_offset = 6 + payload_len;
     out_frame_buffer[crc_offset] = (uint8_t)(checksum & 0xFF);
     out_frame_buffer[crc_offset + 1] = (uint8_t)((checksum >> 8) & 0xFF);
 

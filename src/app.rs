@@ -75,6 +75,7 @@ impl MocapApp {
                     if let Ok(mut fps_guard) = self.shared.calculated_fps.lock() {
                         *fps_guard = 0.0;
                     }
+                    self.shared.detected_mux_mask.store(0, Ordering::Relaxed);
                     if let Ok(mut err_guard) = self.shared.connection_error.lock() {
                         if err_guard.is_none() || err_guard.as_deref() == Some("") {
                             *err_guard = Some("Поиск устройства (таймаут данных)...".to_string());
@@ -125,8 +126,16 @@ impl eframe::App for MocapApp {
 
         if let Ok(mut nodes_guard) = self.shared.nodes.lock() {
             for node in nodes_guard.iter_mut() {
-                let key = MappingProfile::channel_key(node.mux_address, node.channel);
-                let target_bone = self.mapper_view.profile.mappings.get(&key).map(|s| s.as_str());
+                let key = MappingProfile::channel_key(node.mux_address, node.channel, node.sensor_address);
+                let target_bone = self.mapper_view.profile.mappings.get(&key).map(|s| s.as_str())
+                    .or_else(|| {
+                        if node.sensor_address == 0x68 {
+                            let legacy_key = format!("0x{:02X}:{}", node.mux_address, node.channel);
+                            self.mapper_view.profile.mappings.get(&legacy_key).map(|s| s.as_str())
+                        } else {
+                            None
+                        }
+                    });
                 if node.bone_tag.as_deref() != target_bone {
                     node.bone_tag = target_bone.map(String::from);
                 }
