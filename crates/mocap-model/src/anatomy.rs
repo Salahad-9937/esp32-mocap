@@ -58,7 +58,6 @@ impl Builder {
     }
 }
 
-/// Кубическая сплайн-интерполяция Катмулла-Рома
 #[must_use]
 pub fn cr(p: &[f32], i: usize, f: f32) -> f32 {
     let g = |k: isize| p[k.clamp(0, p.len() as isize - 1) as usize];
@@ -69,7 +68,6 @@ pub fn cr(p: &[f32], i: usize, f: f32) -> f32 {
         + (3.0 * p1 - p0 - 3.0 * p2 + p3) * f * f * f)
 }
 
-/// Вычисляет интерполированный радиус вдоль профиля сегмента
 #[must_use]
 pub fn prof_r(prof: &[(f32, f32)], t: f32) -> f32 {
     if t <= prof[0].0 {
@@ -85,7 +83,6 @@ pub fn prof_r(prof: &[(f32, f32)], t: f32) -> f32 {
     prof[prof.len() - 1].1
 }
 
-/// Кусочно-линейная интерполяция высоты стопы
 #[must_use]
 pub fn lin(p: &[(f32, f32)], t: f32) -> f32 {
     if t <= p[0].0 {
@@ -126,12 +123,10 @@ fn resolve(b: &Builder, id: usize, def: &SensorDef) -> SensorSite {
 
 fn anchored(b: &Builder, name: &str) -> (V3, V3, V3, V3) {
     let (p, n) = b.anchors.get(name).copied().unwrap_or(([0.0, 1.0, 0.0], [0.0, 0.0, 1.0]));
-    let tangent = if name == "Forehead" { X } else { UP };
+    let tangent = if name == "Forehead" || name == "C5" { X } else { UP };
     (madd(p, n, STANDOFF), n, tangent, madd(p, n, -0.020))
 }
 
-/// Собирает полное кинематическое тело манекена со всеми суставами и примитивами.
-#[must_use]
 pub fn build() -> Skeleton {
     let mut b = Builder {
         joints: Vec::new(),

@@ -6,20 +6,17 @@ use std::sync::OnceLock;
 
 /// Полное количество аппаратно поддерживаемых сенсорных каналов
 pub const SENSOR_COUNT: usize = 64;
-/// Возвышение сенсорной площадки над поверхностью кости (метры)
-pub const STANDOFF: f32 = 0.004;
+/// Базовый отступ сенсорной площадки от кости (метры)
+pub const STANDOFF: f32 = 0.0012;
 
 /// Анатомическая сторона тела
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Side {
-    /// Левая сторона тела
     Left,
-    /// Правая сторона тела
     Right,
 }
 
 impl Side {
-    /// Знак направления по оси X (-1.0 для правой, 1.0 для левой)
     #[must_use]
     pub const fn sign(self) -> f32 {
         match self {
@@ -28,7 +25,6 @@ impl Side {
         }
     }
 
-    /// Префикс строкового идентификатора сустава или сенсора
     #[must_use]
     pub const fn prefix(self) -> &'static str {
         match self {
@@ -41,51 +37,33 @@ impl Side {
 /// Биомеханический тип анатомического сочленения
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JointKind {
-    /// Корневой сустав (таз)
     Root,
-    /// Шаровидный сустав с тремя вращательными степенями свободы
     Ball,
-    /// Одноосевой цилиндрический шарнир (блоковидный)
     Hinge,
-    /// Вращательный цилиндрический сустав вокруг оси кости
     Pivot,
-    /// Двухосевой седловидный сустав
     Saddle,
-    /// Мыщелковый эллипсоидный сустав
     Condyloid,
-    /// Плоский скользящий сустав
     Gliding,
-    /// Межпозвонковый диск
     Spinal,
 }
 
 /// Материал анатомического сегмента для визуального оттенения
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tone {
-    /// Кортикальная кость
     Cortical,
-    /// Трабекулярная губчатая кость
     Trabecular,
-    /// Костная пластина
     Plate,
-    /// Хрящевая ткань
     Cartilage,
-    /// Зубная ткань
     Tooth,
-    /// Темная контрастная зона
     Dark,
 }
 
 /// Геометрический примитив для построения костей
 #[derive(Debug, Clone)]
 pub enum Prim {
-    /// Сфероцилиндрическая капсула с радиусами `ra` и `rb` на концах
     Capsule { a: V3, b: V3, ra: f32, rb: f32, tone: Tone },
-    /// Сфера с центром `c` и радиусом `r`
     Sphere { c: V3, r: f32, tone: Tone },
-    /// Одиночный треугольник
     Tri { p: [V3; 3], tone: Tone },
-    /// Произвольный триангулированный меш с нормалями
     Mesh {
         vertices: Vec<V3>,
         normals: Vec<V3>,
@@ -97,33 +75,23 @@ pub enum Prim {
 /// Анатомический сустав кинематического дерева
 #[derive(Debug, Clone)]
 pub struct Joint {
-    /// Название сочленения
     pub name: String,
-    /// Тип кинематической пары
     pub kind: JointKind,
-    /// 3D-координаты центра вращения
     pub pos: V3,
-    /// Индекс родительского сочленения
     pub parent: Option<usize>,
-    /// Основная ось вращения шарнира
     pub axis: Option<V3>,
-    /// Радиус суставного маркера
     pub marker_r: f32,
 }
 
 /// Габаритный типоразмер сенсорной платы
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Chip {
-    /// Большая плата (~28 мм) для торса и бедер
     Large,
-    /// Средняя плата (~20 мм) для конечностей и головы
     Medium,
-    /// Малая плата (~11 мм) для фаланг пальцев
     Small,
 }
 
 impl Chip {
-    /// Половина стороны сенсорной платы в метрах
     #[must_use]
     pub const fn half(self) -> f32 {
         match self {
@@ -133,7 +101,6 @@ impl Chip {
         }
     }
 
-    /// Длина визуальных осей ориентации в метрах
     #[must_use]
     pub const fn axis_len(self) -> f32 {
         match self {
@@ -147,15 +114,10 @@ impl Chip {
 /// Способ геометрической привязки сенсора к телу
 #[derive(Debug, Clone, Copy)]
 pub enum Anchor {
-    /// На сегменте кости (имя сегмента, параметр длины 0..1, угол в градусах)
     Seg(&'static str, f32, f32),
-    /// На остистом отростке позвонка
     Spinous(&'static str),
-    /// Лобная кость
     Forehead,
-    /// Грудина
     Sternum,
-    /// Крестец
     Sacrum,
 }
 
@@ -244,7 +206,6 @@ pub const SENSOR_DEFS: [SensorDef; SENSOR_COUNT] = [
     d("RightToe", Rt, Seg("HalluxPP", 0.50, 0.0), S),
 ];
 
-/// Имена целевых сегментов маппинга в каноническом порядке
 pub const TARGET_BONES: [&str; SENSOR_COUNT] = {
     let mut out = [""; SENSOR_COUNT];
     let mut i = 0;
@@ -268,14 +229,12 @@ pub struct SensorSite {
     pub chip: Chip,
 }
 
-/// Единый контейнер биомеханического скелета
 pub struct Skeleton {
     pub joints: Vec<Joint>,
     pub prims: Vec<Prim>,
     pub sites: Vec<SensorSite>,
 }
 
-/// Инициализирует и возвращает разделяемую ссылку на неизменяемый анатомический скелет.
 #[must_use]
 pub fn skeleton() -> &'static Skeleton {
     static SKELETON: OnceLock<Skeleton> = OnceLock::new();

@@ -6,10 +6,10 @@ authors = ["Salahad"]
 description = "Headless data ingestion, calibration and sensor fusion engine for ESP32 MoCap"
 
 [dependencies]
-libc = "0.2"
-serialport = "4.5"
-serde = { version = "1.0", features = ["derive"] }
-toml = "0.8"
+libc = { workspace = true }
+serialport = { workspace = true }
+serde = { workspace = true }
+toml = { workspace = true }
 
 [lib]
 name = "mocap_core"

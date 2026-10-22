@@ -1,18 +1,14 @@
 //! # Интерактивный манипулятор датчиков, меню чувствительности и фокуса (`interact`)
-//!
-//! Обеспечивает наведение, плавную фокусировку на суставах/сенсорах, ручную настройку чувствительности
-//! и перемещение меток датчиков через Shift+ЛКМ без конфликтов с управлением 3D-камерой.
 
 use super::placement;
-use super::skeleton::skeleton;
-use super::surface::raycast;
 use super::viewport::OrbitalCamera;
 use egui::{
     Area, Button, Context, CursorIcon, Frame, Id, Order, PointerButton, Rect, Response, RichText,
     Slider, Ui,
 };
+use mocap_model::skeleton::skeleton;
+use mocap_model::surface::raycast;
 
-/// Панель справочной информации, быстрой фокусировки и пользовательских настроек чувствительности.
 fn show_tools(ctx: &Context, rect: Rect) {
     Area::new(Id::new("sensor_layout_tools"))
         .order(Order::Foreground)
@@ -105,8 +101,6 @@ fn show_tools(ctx: &Context, rect: Rect) {
         });
 }
 
-/// Выполняет арбитраж взаимодействия с метками датчиков и суставами скелета.
-/// Возвращает `true`, если мышь занята активным перетаскиванием метки.
 pub fn handle(ui: &Ui, response: &Response, camera: &OrbitalCamera) -> bool {
     let rect = response.rect;
     let ctx = ui.ctx();
@@ -119,7 +113,6 @@ pub fn handle(ui: &Ui, response: &Response, camera: &OrbitalCamera) -> bool {
 
     let is_shift_active = ui.input(|i| i.modifiers.shift);
 
-    // 1. Обработка активного процесса перемещения метки датчика
     if let Some(id) = placement::dragging() {
         if response.dragged_by(PointerButton::Primary) {
             if let Some(h) = response.interact_pointer_pos().and_then(cast) {
@@ -133,7 +126,6 @@ pub fn handle(ui: &Ui, response: &Response, camera: &OrbitalCamera) -> bool {
         ctx.request_repaint();
     }
 
-    // 2. Зондирование метки датчика под курсором
     let hover_chip = if response.hovered() {
         response.hover_pos().and_then(cast).and_then(|h| placement::pick(h.pos))
     } else {
@@ -144,7 +136,6 @@ pub fn handle(ui: &Ui, response: &Response, camera: &OrbitalCamera) -> bool {
         ctx.request_repaint();
     }
 
-    // 3. Зондирование суставов под курсором, если датчик не перекрывает луч
     let hover_joint = if hover_chip.is_none() && response.hovered() {
         response.hover_pos().and_then(|pos| {
             skeleton().joints.iter().find(|j| {
@@ -157,7 +148,6 @@ pub fn handle(ui: &Ui, response: &Response, camera: &OrbitalCamera) -> bool {
         None
     };
 
-    // 4. Индикация подсказок и арбитраж событий
     if let Some(id) = hover_chip {
         if is_shift_active {
             ctx.set_cursor_icon(CursorIcon::Grab);

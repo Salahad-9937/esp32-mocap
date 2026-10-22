@@ -2,10 +2,10 @@
 
 use super::draw::draw_scene_3d;
 use super::placement;
-use super::skeleton::{skeleton, SENSOR_COUNT};
 use super::viewport::OrbitalCamera;
 use crate::state::NodeTelemetry;
 use egui::{Painter, Rect};
+use mocap_model::skeleton::{skeleton, SENSOR_COUNT};
 
 fn active_quats(nodes: &[NodeTelemetry]) -> [Option<[f32; 4]>; SENSOR_COUNT] {
     let mut out = [None; SENSOR_COUNT];

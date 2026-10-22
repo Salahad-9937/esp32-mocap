@@ -7,11 +7,8 @@ use std::sync::OnceLock;
 /// Результат пересечения луча с поверхностью анатомического манекена
 #[derive(Debug, Clone, Copy)]
 pub struct Hit {
-    /// Дистанция вдоль луча от начала
     pub t: f32,
-    /// 3D-координаты точки касания
     pub pos: V3,
-    /// Единичная внешняя нормаль поверхности в точке касания
     pub normal: V3,
 }
 
@@ -97,7 +94,6 @@ fn hits_aabb(o: V3, d: V3, lo: V3, hi: V3, tmax: f32) -> bool {
     true
 }
 
-/// Выполняет поиск ближайшего пересечения пространственного луча с поверхностью манекена.
 #[must_use]
 pub fn raycast(o: V3, d: V3, max_t: f32) -> Option<Hit> {
     let mut best: Option<Hit> = None;
@@ -150,14 +146,11 @@ pub fn raycast(o: V3, d: V3, max_t: f32) -> Option<Hit> {
                     let t = dot(e2, q) * inv;
                     if t >= 0.0 && t < best_t {
                         let k0 = 1.0 - u - w;
-                        let mut nn = norm([
+                        let nn = norm([
                             n[i0][0] * k0 + n[i1][0] * u + n[i2][0] * w,
                             n[i0][1] * k0 + n[i1][1] * u + n[i2][1] * w,
                             n[i0][2] * k0 + n[i1][2] * u + n[i2][2] * w,
                         ]);
-                        if dot(nn, d) > 0.0 {
-                            nn = scale(nn, -1.0);
-                        }
                         best_t = t;
                         best = Some(Hit { t, pos: add(o, scale(d, t)), normal: nn });
                     }

@@ -6,6 +6,7 @@ use crate::state::{ConnectionStatus, SharedStateHandle, SharedTelemetryState};
 use crate::views::{CalibrationView, MapperView, TopologyView};
 use crate::visuals::{render_3d_scene, OrbitalCamera};
 use egui::{Color32, Frame, Margin, RichText, Stroke, TextWrapMode, Visuals};
+use mocap_core::mapping::MappingProfile;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
@@ -124,8 +125,11 @@ impl eframe::App for MocapApp {
 
         if let Ok(mut nodes_guard) = self.shared.nodes.lock() {
             for node in nodes_guard.iter_mut() {
-                let key = format!("0x{:02X}:{}", node.mux_address, node.channel);
-                node.bone_tag = self.mapper_view.profile.mappings.get(&key).cloned();
+                let key = MappingProfile::channel_key(node.mux_address, node.channel);
+                let target_bone = self.mapper_view.profile.mappings.get(&key).map(|s| s.as_str());
+                if node.bone_tag.as_deref() != target_bone {
+                    node.bone_tag = target_bone.map(String::from);
+                }
             }
         }
 

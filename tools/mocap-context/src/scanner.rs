@@ -30,9 +30,23 @@ pub fn default_components() -> Vec<ProjectComponent> {
             kind: ComponentKind::CodeCrate,
         },
         ProjectComponent {
+            name: "mocap-model".to_string(),
+            path: "crates/mocap-model".to_string(),
+            description: "Headless-модель анатомии, скелета и размещения датчиков".to_string(),
+            level: DetailLevel::Full,
+            kind: ComponentKind::CodeCrate,
+        },
+        ProjectComponent {
             name: "docs".to_string(),
             path: "docs".to_string(),
             description: "Спецификации, регламенты и границы проекта MoCap".to_string(),
+            level: DetailLevel::Full,
+            kind: ComponentKind::Directory,
+        },
+        ProjectComponent {
+            name: "promts".to_string(),
+            path: "promts".to_string(),
+            description: "Инженерные системные промты и регламенты разработки".to_string(),
             level: DetailLevel::Full,
             kind: ComponentKind::Directory,
         },
@@ -70,11 +84,15 @@ pub fn scan_component_files(
         return Vec::new();
     }
 
-    let target_path = if comp.path == "." {
+    let mut target_path = if comp.path == "." {
         root_dir.to_path_buf()
     } else {
         root_dir.join(&comp.path)
     };
+
+    if !target_path.exists() && comp.path == "promts" && root_dir.join("prompts").exists() {
+        target_path = root_dir.join("prompts");
+    }
 
     if !target_path.exists() {
         return Vec::new();

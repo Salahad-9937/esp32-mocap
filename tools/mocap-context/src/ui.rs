@@ -3,17 +3,12 @@
 use crate::config::{ContextConfig, DetailLevel, ProjectComponent, SessionState};
 use crate::generator::{generate_changes_report, generate_context_file, generate_supplement_drop};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
-};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{
-    Block, Borders, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation,
-    ScrollbarState,
-};
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState};
 use ratatui::Terminal;
 use std::io::{self, stdout};
 use std::path::Path;
@@ -27,14 +22,9 @@ pub fn run_tui(
     enable_raw_mode()?;
     let mut stdout = stdout();
     crossterm::execute!(stdout, EnterAlternateScreen)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
 
-    let mut selected_idx = if initial_selected_idx < components.len() {
-        initial_selected_idx
-    } else {
-        0
-    };
+    let mut selected_idx = if initial_selected_idx < components.len() { initial_selected_idx } else { 0 };
     let mut list_state = ListState::default();
     list_state.select(Some(selected_idx));
 
@@ -42,9 +32,7 @@ pub fn run_tui(
 
     loop {
         list_state.select(Some(selected_idx));
-        terminal.draw(|f| {
-            render_ui(f, &components, &mut list_state, selected_idx, &status_msg);
-        })?;
+        terminal.draw(|f| render_ui(f, &components, &mut list_state, selected_idx, &status_msg))?;
 
         if let Event::Key(key) = event::read()? {
             if key.kind != KeyEventKind::Press {
@@ -54,94 +42,70 @@ pub fn run_tui(
             match key.code {
                 KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => break,
                 KeyCode::Up | KeyCode::Char('k') => {
-                    if selected_idx > 0 {
-                        selected_idx -= 1;
-                    }
+                    if selected_idx > 0 { selected_idx -= 1; }
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    if selected_idx + 1 < components.len() {
-                        selected_idx += 1;
-                    }
+                    if selected_idx + 1 < components.len() { selected_idx += 1; }
                 }
                 KeyCode::Right | KeyCode::Char(' ') => {
-                    if let Some(comp) = components.get_mut(selected_idx) {
-                        comp.cycle_next();
-                    }
+                    if let Some(comp) = components.get_mut(selected_idx) { comp.cycle_next(); }
                 }
                 KeyCode::Left => {
-                    if let Some(comp) = components.get_mut(selected_idx) {
-                        comp.cycle_prev();
-                    }
+                    if let Some(comp) = components.get_mut(selected_idx) { comp.cycle_prev(); }
                 }
-                // Пресет 1: Полный дамп всего репозитория
                 KeyCode::Char('1') => {
-                    for c in &mut components {
-                        c.level = DetailLevel::Full;
-                    }
+                    for c in &mut components { c.level = DetailLevel::Full; }
                     status_msg = String::from("Пресет 1: Полный дамп всего проекта (FULL)");
                 }
-                // Пресет 2: Только прошивка и софт
                 KeyCode::Char('2') => {
                     for comp in &mut components {
                         match comp.name.as_str() {
-                            "firmware" | "software" | "root" => comp.level = DetailLevel::Full,
+                            "firmware" | "src" | "mocap-core" | "mocap-model" | "root" => {
+                                comp.level = DetailLevel::Full;
+                            }
                             _ => comp.level = DetailLevel::ManifestOnly,
                         }
                     }
-                    status_msg = String::from("Пресет 2: Прошивка и ПО верхнего уровня");
+                    status_msg = String::from("Пресет 2: Прошивка и ПО (Core, Model, App)");
                 }
-                // Пресет 3: Только документация
                 KeyCode::Char('3') => {
                     for comp in &mut components {
                         match comp.name.as_str() {
-                            "docs" | "scripts" | "root" => comp.level = DetailLevel::Full,
+                            "docs" | "promts" | "scripts" | "root" => comp.level = DetailLevel::Full,
                             _ => comp.level = DetailLevel::ManifestOnly,
                         }
                     }
-                    status_msg = String::from("Пресет 3: Документация и спецификации");
+                    status_msg = String::from("Пресет 3: Документация и промты");
                 }
-                // Отчет изменений Git (changes.txt)
-                KeyCode::Char('c') | KeyCode::Char('C') => {
-                    match generate_changes_report(root_dir, &config) {
-                        Ok((filename, bytes)) => {
-                            status_msg = format!("✔ Сформирован отчет: {} ({} байт)", filename, bytes);
-                        }
-                        Err(e) => status_msg = format!("ОШИБКА: {e}"),
-                    }
-                }
-                // Срез для выбранного компонента
+                KeyCode::Char('c') | KeyCode::Char('C') => match generate_changes_report(root_dir, &config) {
+                    Ok((filename, bytes)) => status_msg = format!("✔ Сформирован отчет: {filename} ({bytes} байт)"),
+                    Err(e) => status_msg = format!("ОШИБКА: {e}"),
+                },
                 KeyCode::Char('d') | KeyCode::Char('D') => {
                     if let Some(comp) = components.get(selected_idx) {
                         match generate_supplement_drop(root_dir, comp, &config) {
                             Ok((filename, count)) => {
-                                status_msg = format!("✔ Срез [{}] (файлов: {}): {}", comp.level.label(), count, filename);
+                                status_msg = format!("✔ Срез [{}] (файлов: {count}): {filename}", comp.level.label());
                             }
                             Err(e) => status_msg = format!("ОШИБКА: {e}"),
                         }
                     }
                 }
-                // Сборка итогового project_context.txt
-                KeyCode::Enter => {
-                    match generate_context_file(root_dir, &components, &config, None) {
-                        Ok((filename, count)) => {
-                            status_msg = format!("✔ УСПЕШНО: Контекст сохранен в {} (файлов: {}). Выход...", filename, count);
-                            let _ = terminal.draw(|f| {
-                                render_ui(f, &components, &mut list_state, selected_idx, &status_msg);
-                            });
-                            std::thread::sleep(std::time::Duration::from_millis(1000));
-                            break;
-                        }
-                        Err(e) => status_msg = format!("ОШИБКА: {e}"),
+                KeyCode::Enter => match generate_context_file(root_dir, &components, &config, None) {
+                    Ok((filename, count)) => {
+                        status_msg = format!("✔ УСПЕШНО: Контекст сохранен в {filename} (файлов: {count}). Выход...");
+                        let _ = terminal.draw(|f| render_ui(f, &components, &mut list_state, selected_idx, &status_msg));
+                        std::thread::sleep(std::time::Duration::from_millis(800));
+                        break;
                     }
-                }
+                    Err(e) => status_msg = format!("ОШИБКА: {e}"),
+                },
                 _ => {}
             }
         }
     }
 
-    let session = SessionState::from_components(selected_idx, &components);
-    session.save_to_file(root_dir);
-
+    SessionState::from_components(selected_idx, &components).save_to_file(root_dir);
     disable_raw_mode()?;
     crossterm::execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
@@ -157,14 +121,9 @@ fn render_ui(
     status_msg: &str,
 ) {
     let size = f.area();
-
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(4),
-            Constraint::Length(2),
-        ])
+        .constraints([Constraint::Length(3), Constraint::Min(4), Constraint::Length(2)])
         .split(size);
 
     let title_text = Paragraph::new("MOCAP-CONTEXT MANAGER :: Менеджер сборки контекста ESP32 MoCap")
@@ -185,14 +144,13 @@ fn render_ui(
         ])),
         ListItem::new(Line::from(vec![
             Span::styled("[2] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::raw("Прошивка и ПО (Core)"),
+            Span::raw("Прошивка и ПО (Core & Model)"),
         ])),
         ListItem::new(Line::from(vec![
             Span::styled("[3] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::raw("Документация (Docs)"),
+            Span::raw("Документация и промты"),
         ])),
     ];
-
     let presets_list = List::new(presets)
         .block(Block::default().borders(Borders::ALL).title(" Пресеты [Клавиши 1-3] "))
         .style(Style::default().fg(Color::White));
@@ -229,33 +187,24 @@ fn render_ui(
                 DetailLevel::ManifestOnly => Color::Yellow,
                 DetailLevel::Skip => Color::DarkGray,
             };
-
             let marker = if is_selected { "> " } else { "  " };
-
-            let line = Line::from(vec![
+            ListItem::new(Line::from(vec![
                 Span::styled(marker, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
                 Span::styled(
                     format!("{:<16}", comp.name),
-                    if is_selected {
-                        Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(Color::Gray)
-                    },
+                    if is_selected { Style::default().fg(Color::White).add_modifier(Modifier::BOLD) } else { Style::default().fg(Color::Gray) },
                 ),
                 Span::raw(" ["),
                 Span::styled(format!("{:^10}", comp.level.label()), Style::default().fg(level_color).add_modifier(Modifier::BOLD)),
                 Span::raw("] "),
                 Span::styled(format!("- {}", comp.description), Style::default().fg(Color::DarkGray)),
-            ]);
-
-            ListItem::new(line)
+            ]))
         })
         .collect();
 
     let comp_list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title(" Компоненты MoCap [Пробел: переключить] "))
         .highlight_style(Style::default().bg(Color::Rgb(20, 30, 45)));
-
     f.render_stateful_widget(comp_list, main_chunks[1], list_state);
 
     if components.len() > inner_height {
@@ -287,7 +236,5 @@ fn render_ui(
             Style::default().fg(Color::DarkGray),
         )),
     ];
-
-    let footer_para = Paragraph::new(footer_lines).alignment(Alignment::Left);
-    f.render_widget(footer_para, chunks[2]);
+    f.render_widget(Paragraph::new(footer_lines).alignment(Alignment::Left), chunks[2]);
 }

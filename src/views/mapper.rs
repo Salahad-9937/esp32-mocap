@@ -3,34 +3,10 @@
 use crate::state::SharedStateHandle;
 use egui::{Color32, ProgressBar, RichText, Ui};
 use mocap_core::mapping::MappingProfile;
+pub use mocap_model::TARGET_BONES;
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::{Duration, Instant};
-
-pub const TARGET_BONES: [&str; 64] = [
-    "HeadTop", "HeadFront", "HeadOcciput", "Neck",
-    "ThoraxUpper", "Thorax", "SpineCervical", "SpineThoracic",
-    "Spine", "Pelvis", "PelvisLeft", "PelvisRight",
-    "LeftShoulder", "RightShoulder",
-    "LeftUpperArm", "LeftUpperArmLower", "LeftForearm", "LeftForearmWrist",
-    "RightUpperArm", "RightUpperArmLower", "RightForearm", "RightForearmWrist",
-    "LeftHand", "LeftThumbProximal", "LeftThumbDistal",
-    "LeftIndexProximal", "LeftIndexDistal", "LeftIndexTip",
-    "LeftMiddleProximal", "LeftMiddleDistal", "LeftMiddleTip",
-    "LeftRingProximal", "LeftRingDistal",
-    "LeftPinkyProximal", "LeftPinkyDistal",
-    "RightHand", "RightThumbProximal", "RightThumbDistal",
-    "RightIndexProximal", "RightIndexDistal", "RightIndexTip",
-    "RightMiddleProximal", "RightMiddleDistal", "RightMiddleTip",
-    "RightRingProximal", "RightRingDistal",
-    "RightPinkyProximal", "RightPinkyDistal",
-    "LeftThigh", "LeftThighLower", "LeftKneeSensor",
-    "LeftShin", "LeftShinLower", "LeftAnkleSensor",
-    "LeftFoot", "LeftToe",
-    "RightThigh", "RightThighLower", "RightKneeSensor",
-    "RightShin", "RightShinLower", "RightAnkleSensor",
-    "RightFoot", "RightToe",
-];
 
 pub struct MapperView {
     pub profile: MappingProfile,
@@ -53,9 +29,78 @@ impl Default for MapperView {
 }
 
 impl MapperView {
+    fn migrate_legacy_bone_name(name: &str) -> Option<&'static str> {
+        if let Some(canonical) = TARGET_BONES.iter().copied().find(|&b| b == name) {
+            return Some(canonical);
+        }
+        match name {
+            "HeadTop" | "HeadFront" | "HeadOcciput" => Some("Head"),
+            "Neck" | "SpineCervical" => Some("Neck"),
+            "ThoraxUpper" => Some("SpineT3"),
+            "Thorax" => Some("Sternum"),
+            "SpineThoracic" => Some("SpineT7"),
+            "Spine" => Some("SpineL3"),
+            "Pelvis" | "PelvisLeft" | "PelvisRight" => Some("Sacrum"),
+            "LeftShoulder" => Some("LeftShoulder"),
+            "RightShoulder" => Some("RightShoulder"),
+            "LeftUpperArm" => Some("LeftUpperArmProx"),
+            "LeftUpperArmLower" => Some("LeftUpperArmDist"),
+            "LeftForearm" => Some("LeftForearmProx"),
+            "LeftForearmWrist" => Some("LeftForearmDist"),
+            "RightUpperArm" => Some("RightUpperArmProx"),
+            "RightUpperArmLower" => Some("RightUpperArmDist"),
+            "RightForearm" => Some("RightForearmProx"),
+            "RightForearmWrist" => Some("RightForearmDist"),
+            "LeftHand" => Some("LeftHand"),
+            "RightHand" => Some("RightHand"),
+            "LeftThigh" => Some("LeftThighProx"),
+            "LeftThighLower" | "LeftKneeSensor" => Some("LeftThighDist"),
+            "LeftShin" => Some("LeftShankProx"),
+            "LeftShinLower" | "LeftAnkleSensor" => Some("LeftShankDist"),
+            "RightThigh" => Some("RightThighProx"),
+            "RightThighLower" | "RightKneeSensor" => Some("RightThighDist"),
+            "RightShin" => Some("RightShankProx"),
+            "RightShinLower" | "RightAnkleSensor" => Some("RightShankDist"),
+            "LeftFoot" => Some("LeftFoot"),
+            "LeftToe" => Some("LeftToe"),
+            "RightFoot" => Some("RightFoot"),
+            "RightToe" => Some("RightToe"),
+            "LeftThumbProximal" => Some("LeftThumbProx"),
+            "LeftThumbDistal" => Some("LeftThumbDist"),
+            "LeftIndexProximal" => Some("LeftIndexProx"),
+            "LeftIndexDistal" | "LeftIndexTip" => Some("LeftIndexDist"),
+            "LeftMiddleProximal" => Some("LeftMiddleProx"),
+            "LeftMiddleDistal" | "LeftMiddleTip" => Some("LeftMiddleDist"),
+            "LeftRingProximal" => Some("LeftRingProx"),
+            "LeftRingDistal" => Some("LeftRingDist"),
+            "LeftPinkyProximal" => Some("LeftPinkyProx"),
+            "LeftPinkyDistal" => Some("LeftPinkyDist"),
+            "RightThumbProximal" => Some("RightThumbProx"),
+            "RightThumbDistal" => Some("RightThumbDist"),
+            "RightIndexProximal" => Some("RightIndexProx"),
+            "RightIndexDistal" | "RightIndexTip" => Some("RightIndexDist"),
+            "RightMiddleProximal" => Some("RightMiddleProx"),
+            "RightMiddleDistal" | "RightMiddleTip" => Some("RightMiddleDist"),
+            "RightRingProximal" => Some("RightRingProx"),
+            "RightRingDistal" => Some("RightRingDist"),
+            "RightPinkyProximal" => Some("RightPinkyProx"),
+            "RightPinkyDistal" => Some("RightPinkyDist"),
+            _ => None,
+        }
+    }
+
     pub fn load_profile(&mut self, path: &Path) {
         if let Ok(p) = MappingProfile::load_from_file(path) {
-            self.profile = p;
+            let mut migrated = HashMap::new();
+            for (channel, legacy_bone) in p.mappings {
+                if let Some(canonical) = Self::migrate_legacy_bone_name(&legacy_bone) {
+                    migrated.insert(channel, canonical.to_string());
+                }
+            }
+            self.profile = MappingProfile {
+                name: p.name,
+                mappings: migrated,
+            };
         }
     }
 
@@ -153,7 +198,7 @@ impl MapperView {
                                 if ui.button("Снять привязку").clicked() {
                                     self.profile.mappings.remove(&key);
                                     if let Ok(mut prof) = shared.mapping_profile.lock() {
-                                                *prof = self.profile.clone();
+                                        *prof = self.profile.clone();
                                     }
                                     ui.close_menu();
                                 }
