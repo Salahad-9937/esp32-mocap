@@ -4,12 +4,9 @@ use super::anatomy;
 use super::math::V3;
 use std::sync::OnceLock;
 
-/// Полное количество аппаратно поддерживаемых сенсорных каналов
 pub const SENSOR_COUNT: usize = 64;
-/// Базовый отступ сенсорной площадки от кости (метры)
 pub const STANDOFF: f32 = 0.0012;
 
-/// Анатомическая сторона тела
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Side {
     Left,
@@ -34,7 +31,6 @@ impl Side {
     }
 }
 
-/// Биомеханический тип анатомического сочленения
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JointKind {
     Root,
@@ -47,7 +43,6 @@ pub enum JointKind {
     Spinal,
 }
 
-/// Материал анатомического сегмента для визуального оттенения
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tone {
     Cortical,
@@ -58,7 +53,6 @@ pub enum Tone {
     Dark,
 }
 
-/// Геометрический примитив для построения костей
 #[derive(Debug, Clone)]
 pub enum Prim {
     Capsule { a: V3, b: V3, ra: f32, rb: f32, tone: Tone },
@@ -72,7 +66,6 @@ pub enum Prim {
     },
 }
 
-/// Анатомический сустав кинематического дерева
 #[derive(Debug, Clone)]
 pub struct Joint {
     pub name: String,
@@ -83,7 +76,6 @@ pub struct Joint {
     pub marker_r: f32,
 }
 
-/// Габаритный типоразмер сенсорной платы
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Chip {
     Large,
@@ -111,7 +103,6 @@ impl Chip {
     }
 }
 
-/// Способ геометрической привязки сенсора к телу
 #[derive(Debug, Clone, Copy)]
 pub enum Anchor {
     Seg(&'static str, f32, f32),
@@ -121,7 +112,6 @@ pub enum Anchor {
     Sacrum,
 }
 
-/// Статическое описание установки сенсора
 #[derive(Debug, Clone, Copy)]
 pub struct SensorDef {
     pub tag: &'static str,
@@ -138,7 +128,6 @@ use Anchor::{Forehead, Sacrum, Seg, Spinous, Sternum};
 use Chip::{Large as L, Medium as M, Small as S};
 use Side::{Left as Lt, Right as Rt};
 
-/// Реестр всех 64 сенсорных позиций костюма захвата движений
 pub const SENSOR_DEFS: [SensorDef; SENSOR_COUNT] = [
     d("Head", Rt, Forehead, M),
     d("Neck", Rt, Spinous("C5"), M),
@@ -216,7 +205,6 @@ pub const TARGET_BONES: [&str; SENSOR_COUNT] = {
     out
 };
 
-/// Рассчитанная сенсорная площадка на поверхности тела
 #[derive(Debug, Clone)]
 pub struct SensorSite {
     pub id: usize,
@@ -232,6 +220,7 @@ pub struct SensorSite {
 pub struct Skeleton {
     pub joints: Vec<Joint>,
     pub prims: Vec<Prim>,
+    pub prim_bones: Vec<&'static str>,
     pub sites: Vec<SensorSite>,
 }
 

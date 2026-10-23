@@ -1,9 +1,10 @@
 //! # Базовые математические примитивы и физические структуры измерений (`types`)
 
+use serde::{Deserialize, Serialize};
 use std::ops::{Add, Mul, Sub};
 
 /// Трехмерный декартов вектор вещественной точности (f64).
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub struct Vector3 {
     pub x: f64,
     pub y: f64,
@@ -85,7 +86,7 @@ impl Mul<f64> for Vector3 {
 }
 
 /// Кватернион пространственной ориентации (скаляр w, вектор x, y, z).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Quaternion {
     pub w: f64,
     pub x: f64,
@@ -142,7 +143,7 @@ impl Mul for Quaternion {
 }
 
 /// Единичный срез измерений одного датчика в физических величинах СИ.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub struct ImuSample {
     pub accel: Vector3,
     pub gyro: Vector3,

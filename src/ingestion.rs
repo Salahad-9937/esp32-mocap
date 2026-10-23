@@ -90,6 +90,7 @@ fn run_stream_loop(
     let mut last_fps_timer = Instant::now();
     let mut last_activity = Instant::now();
     let mut last_step_time = Instant::now();
+    let mut last_raw_nodes = Vec::new();
 
     while shared.is_running.load(Ordering::Relaxed) && shared.user_wants_connected.load(Ordering::Relaxed) {
         if shared.is_paused.load(Ordering::Relaxed) {
@@ -99,6 +100,10 @@ fn run_stream_loop(
 
         if shared.request_calibration.swap(false, Ordering::SeqCst) {
             processor.start_calibration(200);
+        }
+
+        if shared.request_npose_alignment.swap(false, Ordering::SeqCst) {
+            processor.capture_npose_alignment(&last_raw_nodes);
         }
 
         if let Ok(profile) = shared.mapping_profile.try_lock() {
@@ -141,23 +146,27 @@ fn run_stream_loop(
                     }
 
                     let mut telemetry_nodes = Vec::with_capacity(frame.nodes.len());
+                    last_raw_nodes.clear();
+
                     for node in frame.nodes {
                         let energy = node.sample.kinetic_energy();
+                        last_raw_nodes.push(mocap_core::protocol::RawNodeData {
+                            mux_address: node.mux_address,
+                            channel: node.channel,
+                            sensor_address: node.sensor_address,
+                            gyr_x: node.sample.raw_gyro[0],
+                            gyr_y: node.sample.raw_gyro[1],
+                            gyr_z: node.sample.raw_gyro[2],
+                            acc_x: node.sample.raw_accel[0],
+                            acc_y: node.sample.raw_accel[1],
+                            acc_z: node.sample.raw_accel[2],
+                        });
+
                         telemetry_nodes.push(NodeTelemetry {
                             mux_address: node.mux_address,
                             channel: node.channel,
                             sensor_address: node.sensor_address,
-                            raw: mocap_core::protocol::RawNodeData {
-                                mux_address: node.mux_address,
-                                channel: node.channel,
-                                sensor_address: node.sensor_address,
-                                gyr_x: node.sample.raw_gyro[0],
-                                gyr_y: node.sample.raw_gyro[1],
-                                gyr_z: node.sample.raw_gyro[2],
-                                acc_x: node.sample.raw_accel[0],
-                                acc_y: node.sample.raw_accel[1],
-                                acc_z: node.sample.raw_accel[2],
-                            },
+                            raw: last_raw_nodes.last().copied().unwrap_or_default(),
                             calibrated: node.sample,
                             orientation_quat: node.orientation.to_f32_array(),
                             bone_tag: node.bone_name,

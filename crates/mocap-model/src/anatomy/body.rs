@@ -57,6 +57,7 @@ pub fn foot_top(z: f32) -> f32 {
 }
 
 pub fn torso(b: &mut Builder) {
+    b.set_bone("Sacrum");
     let pelvis = [
         r(0.860, -0.010, 0.070, 0.070, 2.4),
         r(0.890, -0.010, 0.112, 0.088, 2.5),
@@ -67,6 +68,7 @@ pub fn torso(b: &mut Builder) {
     ];
     loft(b, &pelvis, Some(0.040), None, Tone::Cortical);
 
+    b.set_bone("SpineL3");
     let abdomen = [
         r(1.080, -0.012, 0.100, 0.080, 2.3),
         r(1.150, -0.012, 0.094, 0.074, 2.3),
@@ -75,6 +77,7 @@ pub fn torso(b: &mut Builder) {
     ];
     loft(b, &abdomen, None, None, Tone::Cortical);
 
+    b.set_bone("SpineT3");
     let chest = [
         r(1.255, -0.010, 0.118, 0.088, 2.6),
         r(1.300, -0.010, 0.140, 0.096, 2.6),
@@ -85,6 +88,7 @@ pub fn torso(b: &mut Builder) {
     ];
     loft(b, &chest, None, Some(0.025), Tone::Cortical);
 
+    b.set_bone("Neck");
     let neck = [
         r(1.440, -0.010, 0.050, 0.050, 2.0),
         r(1.500, -0.006, 0.043, 0.043, 2.0),
@@ -94,6 +98,7 @@ pub fn torso(b: &mut Builder) {
     ];
     loft(b, &neck, None, None, Tone::Cortical);
 
+    b.set_bone("Head");
     let head: Vec<Ring> = [
         (1.585, 0.030, 0.028, 0.032),
         (1.605, 0.020, 0.052, 0.056),
@@ -136,13 +141,21 @@ pub fn shoulder_and_arm(b: &mut Builder, side: Side) {
     let m = |v: V3| mirror(s, v);
     let out = [s, 0.0, 0.0];
 
+    let clavicle_tag = if side == Side::Left { "LeftClavicle" } else { "RightClavicle" };
+    let shoulder_tag = if side == Side::Left { "LeftShoulder" } else { "RightShoulder" };
+    let upper_arm_tag = if side == Side::Left { "LeftUpperArmProx" } else { "RightUpperArmProx" };
+    let forearm_tag = if side == Side::Left { "LeftForearmProx" } else { "RightForearmProx" };
+
+    b.set_bone(clavicle_tag);
     let (ta, tb) = (m([0.045, 1.428, -0.012]), m([0.172, 1.395, -0.015]));
     b.part(format!("{p}Clavicle"), ta, tb, 0.034, 0.040, UP, FRONT);
     b.seg_only(format!("{p}Acromion"), ta, tb, vec![(0.0, 0.034), (1.0, 0.040)], UP, FRONT);
 
+    b.set_bone(shoulder_tag);
     let gh = m([0.178, 1.390, -0.012]);
     b.ball(gh, 0.046, Tone::Plate);
 
+    b.set_bone(upper_arm_tag);
     let elbow = m([0.200, 1.108, -0.012]);
     super::lofting::limb(
         b,
@@ -158,6 +171,7 @@ pub fn shoulder_and_arm(b: &mut Builder, side: Side) {
     );
     b.ball(elbow, 0.030, Tone::Plate);
 
+    b.set_bone(forearm_tag);
     let wrist = m([0.216, 0.858, -0.006]);
     let fprof = [(0.0, 0.029), (0.2, 0.030), (0.6, 0.024), (1.0, 0.018)];
     super::lofting::limb(b, Some(format!("{p}Ulna")), elbow, wrist, &fprof, 1.0, FRONT, out, false, false);
@@ -179,6 +193,9 @@ pub fn hand(b: &mut Builder, side: Side) {
     let wrist_name = format!("{p}Wrist");
     b.joint(&wrist_name, JointKind::Condyloid, mirror(s, WRIST), Some(&format!("{p}Radioulnar")), 0.006, None);
 
+    let hand_tag = if side == Side::Left { "LeftHand" } else { "RightHand" };
+    b.set_bone(hand_tag);
+
     let (pa, pe) = (rel(-0.003, -0.010, -0.004), rel(-0.005, -0.056, -0.004));
     let pp = [(0.0_f32, 0.0125_f32, 0.020_f32), (0.35, 0.0140, 0.032), (1.0, 0.0120, 0.036)];
     let mut rings: Vec<Ring> = pp
@@ -198,6 +215,7 @@ pub fn hand(b: &mut Builder, side: Side) {
     let theta = [5.0_f32, 20.0, 30.0];
     let radii = [(0.0055, 0.0048), (0.0048, 0.0040), (0.0040, 0.0034)];
     let phal = ["PP", "MP", "DP"];
+    let p_full = if side == Side::Left { "Left" } else { "Right" };
 
     for f in 0..4 {
         let mcp = rel(mcp_dx[f], mcp_dy[f], mcp_dz[f]);
@@ -209,6 +227,26 @@ pub fn hand(b: &mut Builder, side: Side) {
             let th = theta[k].to_radians();
             let dir = norm([-s * th.sin(), -th.cos(), fan[f]]);
             let next = madd(cur, dir, lens[f][k] * HS);
+            let sub_name = match k {
+                0 => "Prox",
+                1 => "Mid",
+                _ => "Dist",
+            };
+            let finger_tag = match (f, k) {
+                (0, 0) => if side == Side::Left { "LeftIndexProx" } else { "RightIndexProx" },
+                (0, 1) => if side == Side::Left { "LeftIndexMid" } else { "RightIndexMid" },
+                (0, 2) => if side == Side::Left { "LeftIndexDist" } else { "RightIndexDist" },
+                (1, 0) => if side == Side::Left { "LeftMiddleProx" } else { "RightMiddleProx" },
+                (1, 1) => if side == Side::Left { "LeftMiddleMid" } else { "RightMiddleMid" },
+                (1, 2) => if side == Side::Left { "LeftMiddleDist" } else { "RightMiddleDist" },
+                (2, 0) => if side == Side::Left { "LeftRingProx" } else { "RightRingProx" },
+                (2, 1) => if side == Side::Left { "LeftRingMid" } else { "RightRingMid" },
+                (2, 2) => if side == Side::Left { "LeftRingDist" } else { "RightRingDist" },
+                (3, 0) => if side == Side::Left { "LeftPinkyProx" } else { "RightPinkyProx" },
+                (3, 1) => if side == Side::Left { "LeftPinkyMid" } else { "RightPinkyMid" },
+                _ => if side == Side::Left { "LeftPinkyDist" } else { "RightPinkyDist" },
+            };
+            b.set_bone(finger_tag);
             b.part(format!("{p}{}{}", names[f], phal[k]), cur, next, radii[k].0 * HS, radii[k].1 * HS, out, FRONT);
             if k < 2 {
                 let jn = format!("{p}{}{}", if k == 0 { "PIP" } else { "DIP" }, f + 2);
@@ -224,9 +262,14 @@ pub fn hand(b: &mut Builder, side: Side) {
     let ip1 = rel(-0.015, -0.054, 0.030);
     let tip1 = rel(-0.020, -0.068, 0.036);
     let n0 = norm([s, 0.0, 0.4]);
+
+    b.set_bone(if side == Side::Left { "LeftThumbMeta" } else { "RightThumbMeta" });
     b.part(format!("{p}ThumbMC"), cmc, mcp1, 0.0075 * HS, 0.0062 * HS, n0, UP);
+    b.set_bone(if side == Side::Left { "LeftThumbProx" } else { "RightThumbProx" });
     b.part(format!("{p}ThumbPP"), mcp1, ip1, 0.0062 * HS, 0.0054 * HS, n0, UP);
+    b.set_bone(if side == Side::Left { "LeftThumbDist" } else { "RightThumbDist" });
     b.part(format!("{p}ThumbDP"), ip1, tip1, 0.0054 * HS, 0.0044 * HS, n0, UP);
+
     b.joint(&format!("{p}CMC1"), JointKind::Saddle, cmc, Some(&wrist_name), 0.003, None);
     b.joint(&format!("{p}MCP1"), JointKind::Condyloid, mcp1, Some(&format!("{p}CMC1")), 0.0025, None);
     b.joint(&format!("{p}IP1"), JointKind::Hinge, ip1, Some(&format!("{p}MCP1")), 0.002, Some(FRONT));
@@ -302,6 +345,11 @@ pub fn leg(b: &mut Builder, side: Side) {
     let m = |v: V3| mirror(s, v);
     let out = [s, 0.0, 0.0];
 
+    let thigh_tag = if side == Side::Left { "LeftThighProx" } else { "RightThighProx" };
+    let shank_tag = if side == Side::Left { "LeftShankProx" } else { "RightShankProx" };
+    let foot_tag = if side == Side::Left { "LeftFoot" } else { "RightFoot" };
+
+    b.set_bone(thigh_tag);
     let hip = m([0.096, 0.905, -0.005]);
     let knee = m([0.082, 0.495, 0.000]);
     super::lofting::limb(
@@ -318,6 +366,7 @@ pub fn leg(b: &mut Builder, side: Side) {
     );
     b.ball(knee, 0.040, Tone::Plate);
 
+    b.set_bone(shank_tag);
     super::lofting::limb(
         b,
         Some(format!("{p}Tibia")),
@@ -333,8 +382,10 @@ pub fn leg(b: &mut Builder, side: Side) {
     let ankle = m([0.082, 0.070, -0.003]);
     b.ball(ankle, 0.024, Tone::Plate);
 
+    b.set_bone(foot_tag);
     let (fv, fnm, fi) = foot_mesh(0.082 * s, s);
     b.prims.push(Prim::Mesh { vertices: fv, normals: fnm, indices: fi, tone: Tone::Cortical });
+    b.prim_bones.push(b.current_bone);
 
     let (z1, z2) = (0.030 * ZS, 0.060 * ZS);
     b.seg_only(

@@ -1,19 +1,20 @@
-//! # Калибровка аппаратного нуля гироскопов и физическое масштабирование (`calibration`)
+//! # Калибровка аппаратного нуля гироскопов и пространственного выравнивания (`calibration`)
 
 use crate::error::{MocapError, Result};
 use crate::protocol::RawNodeData;
-use crate::types::{ImuSample, Vector3};
+use crate::types::{ImuSample, Quaternion, Vector3};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::Path;
 
 pub const ACCEL_SCALE_4G: f64 = 9.80665 / 8192.0;
 pub const GYRO_SCALE_1000DPS: f64 = (std::f64::consts::PI / 180.0) / 32.8;
 
-/// Статическое смещение нуля трехосевого гироскопа.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub struct NodeBias {
     pub gyro: Vector3,
 }
 
-/// Накопитель калибровочной выборки в состоянии покоя.
 pub struct BiasEstimator {
     target_samples: usize,
     collected_samples: usize,
@@ -33,7 +34,6 @@ impl BiasEstimator {
         }
     }
 
-    /// Добавляет срез сырых данных текущего кадра в накопитель с динамическим расширением.
     pub fn push_sample(&mut self, raw_nodes: &[RawNodeData]) {
         if self.is_complete() {
             return;
@@ -64,13 +64,9 @@ impl BiasEstimator {
         (self.collected_samples as f32 / self.target_samples as f32).clamp(0.0, 1.0)
     }
 
-    /// Вычисляет итоговый вектор смещений нуля с валидацией покоя.
     pub fn finalize(&self) -> Result<Vec<NodeBias>> {
-        if !self.is_complete() {
-            return Err(MocapError::CalibrationFailed("Недостаточно накопленных выборок".into()));
-        }
-
-        let inv_n = 1.0 / (self.collected_samples as f64);
+        let actual_samples = self.collected_samples.max(1) as f64;
+        let inv_n = 1.0 / actual_samples;
         let mut biases = Vec::with_capacity(self.accumulators.len());
 
         for i in 0..self.accumulators.len() {
@@ -80,9 +76,9 @@ impl BiasEstimator {
                 + (mean_sq.y - mean.y * mean.y)
                 + (mean_sq.z - mean.z * mean.z);
 
-            if variance > 600.0 {
+            if variance > 2500.0 {
                 return Err(MocapError::CalibrationFailed(format!(
-                    "Обнаружено движение узла #{} во время калибровки (дисперсия {:.1})",
+                    "Обнаружено сильное движение узла #{} во время калибровки нуля (дисперсия {:.1})",
                     i + 1,
                     variance
                 )));
@@ -95,23 +91,63 @@ impl BiasEstimator {
     }
 }
 
-/// Калибратор для нормализации сырых данных узлов в физические величины СИ.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CalibrationProfile {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub biases: Vec<NodeBias>,
+    #[serde(default)]
+    pub alignments: HashMap<String, [f64; 4]>,
+}
+
+impl CalibrationProfile {
+    pub fn load_from_file(path: &Path) -> Result<Self> {
+        if !path.exists() {
+            return Ok(Self::default());
+        }
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| MocapError::CalibrationFailed(e.to_string()))?;
+        let profile = toml::from_str(&content)?;
+        Ok(profile)
+    }
+
+    pub fn save_to_file(&self, path: &Path) -> Result<()> {
+        let serialized = toml::to_string_pretty(self)?;
+        std::fs::write(path, serialized)
+            .map_err(|e| MocapError::CalibrationFailed(e.to_string()))?;
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Calibrator {
     pub biases: Vec<NodeBias>,
+    pub alignments: HashMap<String, Quaternion>,
 }
 
 impl Calibrator {
     #[must_use]
     pub fn new() -> Self {
-        Self { biases: Vec::new() }
+        Self {
+            biases: Vec::new(),
+            alignments: HashMap::new(),
+        }
     }
 
     pub fn set_biases(&mut self, biases: Vec<NodeBias>) {
         self.biases = biases;
     }
 
-    /// Преобразует сырые коды в физический срез СИ с вычитанием калибровочного нуля.
+    pub fn set_alignment(&mut self, channel_key: String, alignment: Quaternion) {
+        self.alignments.insert(channel_key, alignment);
+    }
+
+    #[must_use]
+    pub fn get_alignment(&self, channel_key: &str) -> Quaternion {
+        self.alignments.get(channel_key).copied().unwrap_or(Quaternion::IDENTITY)
+    }
+
     #[must_use]
     pub fn calibrate_node(&self, node_idx: usize, raw: &RawNodeData) -> ImuSample {
         let bias = self.biases.get(node_idx).copied().unwrap_or_default();

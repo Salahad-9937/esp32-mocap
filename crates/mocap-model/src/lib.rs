@@ -1,18 +1,19 @@
 //! # `mocap-model`
 //!
 //! Доменная библиотека биомеханического скелета человека, процедурной геометрии манекена,
-//! описания сенсорных площадок и пространственного лучевого коллидера (Raycasting).
-//! Полностью изолирована от оконных систем, графических API и прикладной политики ввода.
+//! прямой кинематики (Forward Kinematics) и пространственного коллидера (Raycasting).
 
 #![forbid(unsafe_code)]
 
 pub mod anatomy;
+pub mod kinematics;
 pub mod math;
 pub mod placement;
 pub mod skeleton;
 pub mod surface;
 
 pub use anatomy::build as build_mannequin;
+pub use kinematics::{kinematic_tree, rotate_vec_by_quat, BoneTransform, KinematicTree};
 pub use math::V3;
 pub use placement::{PlacedChip, SensorLayoutManager};
 pub use skeleton::{

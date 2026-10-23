@@ -14,7 +14,6 @@ pub const UP: V3 = [0.0, 1.0, 0.0];
 pub const FRONT: V3 = [0.0, 0.0, 1.0];
 pub const X: V3 = [1.0, 0.0, 0.0];
 
-/// Геометрический сегмент кости для привязки сенсоров вдоль оси a -> b
 #[derive(Clone)]
 pub struct Seg {
     pub a: V3,
@@ -24,22 +23,29 @@ pub struct Seg {
     pub n90: V3,
 }
 
-/// Процедурный компоновщик анатомических сегментов и суставов
 pub struct Builder {
     pub joints: Vec<Joint>,
     pub jidx: HashMap<String, usize>,
     pub prims: Vec<Prim>,
+    pub prim_bones: Vec<&'static str>,
     pub segs: HashMap<String, Seg>,
     pub anchors: HashMap<String, (V3, V3)>,
+    pub current_bone: &'static str,
 }
 
 impl Builder {
+    pub fn set_bone(&mut self, bone: &'static str) {
+        self.current_bone = bone;
+    }
+
     pub fn cap(&mut self, a: V3, b: V3, ra: f32, rb: f32, tone: Tone) {
         self.prims.push(Prim::Capsule { a, b, ra, rb, tone });
+        self.prim_bones.push(self.current_bone);
     }
 
     pub fn ball(&mut self, c: V3, r: f32, tone: Tone) {
         self.prims.push(Prim::Sphere { c, r, tone });
+        self.prim_bones.push(self.current_bone);
     }
 
     pub fn part(&mut self, key: String, a: V3, b: V3, ra: f32, rb: f32, n0: V3, n90: V3) {
@@ -132,8 +138,10 @@ pub fn build() -> Skeleton {
         joints: Vec::new(),
         jidx: HashMap::new(),
         prims: Vec::new(),
+        prim_bones: Vec::new(),
         segs: HashMap::new(),
         anchors: HashMap::new(),
+        current_bone: "Sacrum",
     };
     b.joint("Pelvis", JointKind::Root, [0.0, 0.94, -0.015], None, 0.007, None);
     body::torso(&mut b);
@@ -143,5 +151,10 @@ pub fn build() -> Skeleton {
         body::leg(&mut b, side);
     }
     let sites = SENSOR_DEFS.iter().enumerate().map(|(i, d)| resolve(&b, i, d)).collect();
-    Skeleton { joints: b.joints, prims: b.prims, sites }
+    Skeleton {
+        joints: b.joints,
+        prims: b.prims,
+        prim_bones: b.prim_bones,
+        sites,
+    }
 }

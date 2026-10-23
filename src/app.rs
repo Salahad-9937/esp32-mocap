@@ -3,7 +3,7 @@
 use crate::config::AppConfig;
 use crate::ingestion::spawn_background_ingestion;
 use crate::state::{ConnectionStatus, SharedStateHandle, SharedTelemetryState};
-use crate::views::{CalibrationView, MapperView, TopologyView};
+use crate::views::{CalibrationView, MapperView, TopologyView, TrackingView};
 use crate::visuals::{render_3d_scene, OrbitalCamera};
 use egui::{Color32, Frame, Margin, RichText, Stroke, TextWrapMode, Visuals};
 use mocap_core::mapping::MappingProfile;
@@ -16,6 +16,7 @@ pub enum ActiveTab {
     Topology,
     Mapper,
     Calibration,
+    Tracking,
 }
 
 pub struct MocapApp {
@@ -27,6 +28,7 @@ pub struct MocapApp {
     pub topology_view: TopologyView,
     pub mapper_view: MapperView,
     pub calibration_view: CalibrationView,
+    pub tracking_view: TrackingView,
 }
 
 impl MocapApp {
@@ -62,6 +64,7 @@ impl MocapApp {
             topology_view: TopologyView::default(),
             mapper_view,
             calibration_view: CalibrationView::default(),
+            tracking_view: TrackingView::default(),
         }
     }
 
@@ -218,31 +221,23 @@ impl eframe::App for MocapApp {
 
                 ui.add_space(4.0);
 
-                let tabs_row_id = ui.id().with("tabs_row_width");
-                let tabs_row_w = ui.data(|d| d.get_temp::<f32>(tabs_row_id)).unwrap_or(342.0);
-                let tabs_offset = (ui.available_width() - tabs_row_w).max(0.0) * 0.5;
-
+                // ── 4 режима интерфейса: Топология | Маппинг | Калибровка | Захват ──
                 let mut clicked_tab = None;
-                let tabs_resp = ui.horizontal(|ui| {
-                    ui.add_space(tabs_offset);
-                    let start_x = ui.cursor().min.x;
-
+                ui.horizontal(|ui| {
                     for (tab, text) in [
                         (ActiveTab::Topology, "Топология"),
                         (ActiveTab::Mapper, "Маппинг"),
                         (ActiveTab::Calibration, "Калибровка"),
+                        (ActiveTab::Tracking, "🎬 Захват"),
                     ] {
-                        let btn = egui::Button::new(RichText::new(text).size(13.5).strong())
+                        let btn = egui::Button::new(RichText::new(text).size(12.5).strong())
                             .selected(self.active_tab == tab)
-                            .min_size(egui::vec2(108.0, 28.0));
+                            .min_size(egui::vec2(95.0, 28.0));
                         if ui.add(btn).clicked() {
                             clicked_tab = Some(tab);
                         }
                     }
-
-                    ui.min_rect().max.x - start_x
                 });
-                ui.data_mut(|d| d.insert_temp(tabs_row_id, tabs_resp.inner));
 
                 if let Some(tab) = clicked_tab {
                     self.active_tab = tab;
@@ -264,6 +259,9 @@ impl eframe::App for MocapApp {
                             ActiveTab::Calibration => {
                                 self.calibration_view.show(ui, &self.shared);
                             }
+                            ActiveTab::Tracking => {
+                                self.tracking_view.show(ui, &self.shared);
+                            }
                         }
                     });
             });
@@ -283,7 +281,7 @@ impl eframe::App for MocapApp {
                 painter.rect_filled(response.rect, 0.0_f32, bg_color);
 
                 let nodes = self.shared.nodes.lock().map(|g| g.clone()).unwrap_or_default();
-                render_3d_scene(&painter, &self.camera, response.rect, &nodes);
+                render_3d_scene(&painter, &self.camera, response.rect, &nodes, self.active_tab);
             });
 
         if self.connection_status == ConnectionStatus::Connected {

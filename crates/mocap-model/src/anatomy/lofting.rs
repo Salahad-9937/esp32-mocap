@@ -5,10 +5,8 @@ use super::super::skeleton::{Prim, Tone};
 use super::{cr, Builder};
 use std::f32::consts::TAU;
 
-/// Количество радиальных вершин в одном поперечном сечении
 pub const RING_N: usize = 24;
 
-/// Поперечное сечение с суперэллиптической формой
 #[derive(Clone, Copy)]
 pub struct Ring {
     pub c: V3,
@@ -17,7 +15,6 @@ pub struct Ring {
     pub ex: f32,
 }
 
-/// Генерирует массив 3D-точек вдоль периметра кольца.
 #[must_use]
 pub fn ring_pts(r: &Ring, k: f32, dy: f32) -> Vec<V3> {
     (0..RING_N)
@@ -32,7 +29,6 @@ pub fn ring_pts(r: &Ring, k: f32, dy: f32) -> Vec<V3> {
         .collect()
 }
 
-/// Подразделяет последовательность сечений сплайном Катмулла-Рома.
 #[must_use]
 pub fn refine(rings: &[Ring]) -> Vec<Ring> {
     const SUB: usize = 3;
@@ -57,7 +53,6 @@ pub fn refine(rings: &[Ring]) -> Vec<Ring> {
     out
 }
 
-/// Рассчитывает сглаженные вершинные нормали триангулированного меша.
 #[must_use]
 pub fn mesh_normals(v: &[V3], idx: &[u32]) -> Vec<V3> {
     let mut n = vec![[0.0_f32; 3]; v.len()];
@@ -71,7 +66,6 @@ pub fn mesh_normals(v: &[V3], idx: &[u32]) -> Vec<V3> {
     n.into_iter().map(norm).collect()
 }
 
-/// Строит сглаженный замкнутый меш через лофтинг колец сечений.
 pub fn loft(b: &mut Builder, rings: &[Ring], bot: Option<f32>, top: Option<f32>, tone: Tone) {
     let refined = refine(rings);
     let rings = &refined[..];
@@ -127,9 +121,9 @@ pub fn loft(b: &mut Builder, rings: &[Ring], bot: Option<f32>, top: Option<f32>,
     }
     let normals = mesh_normals(&verts, &idx);
     b.prims.push(Prim::Mesh { vertices: verts, normals, indices: idx, tone });
+    b.prim_bones.push(b.current_bone);
 }
 
-/// Строит анатомическую геометрию конечности с плавным профилем сужения.
 #[allow(clippy::too_many_arguments)]
 pub fn limb(
     b: &mut Builder,
