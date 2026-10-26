@@ -41,7 +41,26 @@ fn show_tools(ctx: &Context, rect: Rect) {
                 });
 
                 ui.add_space(2.0);
-                ui.label(RichText::new("ЛКМ по площадке — выбрать сегмент для маппинга.\n2x-ЛКМ — сфокусировать камеру на объекте.").italics().size(11.0));
+                ui.separator();
+
+                ui.label(RichText::new("Отображение элементов").strong());
+                ui.horizontal(|ui| {
+                    let mut show_sensors = placement::show_sensors();
+                    if ui.checkbox(&mut show_sensors, RichText::new("🏷 Датчики").strong()).changed() {
+                        placement::set_show_sensors(show_sensors);
+                        ctx.request_repaint();
+                    }
+
+                    let mut show_joints = placement::show_joints();
+                    if ui.checkbox(&mut show_joints, RichText::new("🔵 Суставы").strong()).changed() {
+                        placement::set_show_joints(show_joints);
+                        ctx.request_repaint();
+                    }
+                });
+
+                if placement::show_sensors() {
+                    ui.label(RichText::new("ЛКМ по площадке — выбрать сегмент для маппинга.\n2x-ЛКМ — сфокусировать камеру на объекте.").italics().size(11.0));
+                }
 
                 ui.separator();
                 egui::CollapsingHeader::new(RichText::new("⚙ Чувствительность управления").strong())
@@ -90,12 +109,14 @@ fn show_tools(ctx: &Context, rect: Rect) {
                         }
                     });
 
-                ui.separator();
-                ui.label(RichText::new("Позиционирование меток").strong());
-                ui.label("Перемещение: Shift + перетаскивание ЛКМ\nСброс одной: Shift + 2x-ЛКМ");
-                let n = placement::custom_count();
-                if ui.add_enabled(n > 0, Button::new(format!("Сбросить все ({n})"))).clicked() {
-                    placement::reset_all();
+                if placement::show_sensors() {
+                    ui.separator();
+                    ui.label(RichText::new("Позиционирование меток").strong());
+                    ui.label("Перемещение: Shift + перетаскивание ЛКМ\nСброс одной: Shift + 2x-ЛКМ");
+                    let n = placement::custom_count();
+                    if ui.add_enabled(n > 0, Button::new(format!("Сбросить все ({n})"))).clicked() {
+                        placement::reset_all();
+                    }
                 }
             });
         });
@@ -112,21 +133,25 @@ pub fn handle(ui: &Ui, response: &Response, camera: &OrbitalCamera) -> bool {
     };
 
     let is_shift_active = ui.input(|i| i.modifiers.shift);
+    let sensors_visible = placement::show_sensors();
+    let joints_visible = placement::show_joints();
 
-    if let Some(id) = placement::dragging() {
-        if response.dragged_by(PointerButton::Primary) {
-            if let Some(h) = response.interact_pointer_pos().and_then(cast) {
-                placement::move_chip(id, h.pos, h.normal);
+    if sensors_visible {
+        if let Some(id) = placement::dragging() {
+            if response.dragged_by(PointerButton::Primary) {
+                if let Some(h) = response.interact_pointer_pos().and_then(cast) {
+                    placement::move_chip(id, h.pos, h.normal);
+                }
+                ctx.set_cursor_icon(CursorIcon::Grabbing);
+                ctx.request_repaint();
+                return true;
             }
-            ctx.set_cursor_icon(CursorIcon::Grabbing);
+            placement::end_drag();
             ctx.request_repaint();
-            return true;
         }
-        placement::end_drag();
-        ctx.request_repaint();
     }
 
-    let hover_chip = if response.hovered() {
+    let hover_chip = if sensors_visible && response.hovered() {
         response.hover_pos().and_then(cast).and_then(|h| placement::pick(h.pos))
     } else {
         None
@@ -136,12 +161,12 @@ pub fn handle(ui: &Ui, response: &Response, camera: &OrbitalCamera) -> bool {
         ctx.request_repaint();
     }
 
-    if response.clicked_by(PointerButton::Primary) && !is_shift_active && hover_chip.is_some() {
+    if sensors_visible && response.clicked_by(PointerButton::Primary) && !is_shift_active && hover_chip.is_some() {
         placement::set_selected(hover_chip);
         ctx.request_repaint();
     }
 
-    let hover_joint = if hover_chip.is_none() && response.hovered() {
+    let hover_joint = if joints_visible && hover_chip.is_none() && response.hovered() {
         response.hover_pos().and_then(|pos| {
             skeleton().joints.iter().find(|j| {
                 camera.project(j.pos, rect).map_or(false, |sp| {

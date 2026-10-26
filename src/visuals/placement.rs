@@ -36,6 +36,8 @@ struct State {
     selected: Option<usize>,
     drag: Option<usize>,
     sensitivity: CameraSensitivity,
+    show_sensors: bool,
+    show_joints: bool,
 }
 
 static PENDING_FOCUS: Mutex<Option<(V3, f32)>> = Mutex::new(None);
@@ -60,6 +62,8 @@ fn state() -> &'static Mutex<State> {
             selected: None,
             drag: None,
             sensitivity: CameraSensitivity::default(),
+            show_sensors: true,
+            show_joints: true,
         })
     })
 }
@@ -67,6 +71,24 @@ fn state() -> &'static Mutex<State> {
 fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
     let mut g = state().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     f(&mut g)
+}
+
+#[must_use]
+pub fn show_sensors() -> bool {
+    with(|s| s.show_sensors)
+}
+
+pub fn set_show_sensors(show: bool) {
+    with(|s| s.show_sensors = show);
+}
+
+#[must_use]
+pub fn show_joints() -> bool {
+    with(|s| s.show_joints)
+}
+
+pub fn set_show_joints(show: bool) {
+    with(|s| s.show_joints = show);
 }
 
 #[must_use]

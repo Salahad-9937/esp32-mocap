@@ -7,11 +7,11 @@ use super::axes::rotate_vector_by_quat;
 use super::placement::{self, PlacedChip};
 use super::viewport::OrbitalCamera;
 use eframe::egui_glow;
-use egui::{Painter, Rect};
+use egui::{Color32, Painter, Rect, Stroke};
 use geometry::{add_cage_and_grid_lines, add_capsule_geo, add_sphere_geo, tone_rgba};
 use mocap_model::kinematics::BoneTransform;
 use mocap_model::math::{add, cross, norm, sub, V3};
-use mocap_model::skeleton::{Prim, Skeleton, Tone};
+use mocap_model::skeleton::{Prim, Skeleton};
 pub use pipeline::{GlSceneRenderer, GlVertex};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -115,65 +115,61 @@ pub fn draw_scene_3d(
         }
     }
 
-    // Сочленения (суставы) двигаются строго со своими костями
-    for j in &skel.joints {
-        let r = if j.marker_r > 0.010 { 0.007 } else { 0.005 };
-        let bone_tag = joint_bone_tag(&j.name);
-        let tf = transforms.and_then(|t| t.get(bone_tag));
-        let pos = transform_v3(j.pos, tf);
-        add_sphere_geo(&mut tri_vertices, &mut tri_indices, pos, r, Tone::Dark);
-    }
-
+    let show_sensors = placement::show_sensors();
     let highlighted = placement::highlight();
     let selected = placement::selected();
 
-    for (st, q) in chips.iter().zip(quats) {
-        let tf = transforms.and_then(|t| t.get(st.tag));
-        let color = if selected == Some(st.id) {
-            [1.0, 0.88, 0.20, 1.0]
-        } else if highlighted == Some(st.id) {
-            [0.45, 0.85, 1.0, 1.0]
-        } else if q.is_some() {
-            [0.18, 0.92, 0.35, 1.0]
-        } else {
-            [0.48, 0.52, 0.62, 0.90]
-        };
+    if show_sensors {
+        for (st, q) in chips.iter().zip(quats) {
+            let tf = transforms.and_then(|t| t.get(st.tag));
+            let color = if selected == Some(st.id) {
+                [1.0, 0.88, 0.20, 1.0]
+            } else if highlighted == Some(st.id) {
+                [0.45, 0.85, 1.0, 1.0]
+            } else if q.is_some() {
+                [0.18, 0.92, 0.35, 1.0]
+            } else {
+                [0.35, 0.40, 0.50, 1.0]
+            };
 
-        let base = tri_vertices.len() as u32;
-        for k in 0..9 {
-            let pos = transform_v3(st.patch[k], tf);
-            let normal = transform_norm(st.patch_n[k], tf);
-            tri_vertices.push(GlVertex { pos, normal, color, ao: 1.0 });
-        }
-        for row in 0..2u32 {
-            for col in 0..2u32 {
-                let v00 = base + row * 3 + col;
-                let (v01, v10, v11) = (v00 + 1, v00 + 3, v00 + 4);
-                tri_indices.extend([v00, v11, v01, v00, v10, v11]);
-                tri_indices.extend([v00, v01, v11, v00, v11, v10]);
+            let base = tri_vertices.len() as u32;
+            for k in 0..9 {
+                let pos = transform_v3(st.patch[k], tf);
+                let normal = transform_norm(st.patch_n[k], tf);
+                tri_vertices.push(GlVertex { pos, normal, color, ao: 1.0 });
+            }
+            for row in 0..2u32 {
+                for col in 0..2u32 {
+                    let v00 = base + row * 3 + col;
+                    let (v01, v10, v11) = (v00 + 1, v00 + 3, v00 + 4);
+                    tri_indices.extend([v00, v11, v01, v00, v10, v11]);
+                    tri_indices.extend([v00, v01, v11, v00, v11, v10]);
+                }
             }
         }
     }
 
     add_cage_and_grid_lines(&mut line_vertices, &mut line_indices);
 
-    for (st, q) in chips.iter().zip(quats) {
-        if let Some(quat) = q {
-            let tf = transforms.and_then(|t| t.get(st.tag));
-            let chip_pos = transform_v3(st.pos, tf);
-            let axis_len = st.chip.axis_len();
-            let axes = [
-                ([axis_len, 0.0, 0.0], [0.95, 0.20, 0.20, 1.0]),
-                ([0.0, axis_len, 0.0], [0.20, 0.90, 0.30, 1.0]),
-                ([0.0, 0.0, axis_len], [0.20, 0.50, 1.0, 1.0]),
-            ];
-            for (local, col) in axes {
-                let rot = rotate_vector_by_quat(local, *quat);
-                let tip = add(chip_pos, rot);
-                let b = line_vertices.len() as u32;
-                line_vertices.push(GlVertex { pos: chip_pos, normal: [0.0, 1.0, 0.0], color: col, ao: 1.0 });
-                line_vertices.push(GlVertex { pos: tip, normal: [0.0, 1.0, 0.0], color: col, ao: 1.0 });
-                line_indices.extend([b, b + 1]);
+    if show_sensors {
+        for (st, q) in chips.iter().zip(quats) {
+            if let Some(quat) = q {
+                let tf = transforms.and_then(|t| t.get(st.tag));
+                let chip_pos = transform_v3(st.pos, tf);
+                let axis_len = st.chip.axis_len();
+                let axes = [
+                    ([axis_len, 0.0, 0.0], [0.95, 0.20, 0.20, 1.0]),
+                    ([0.0, axis_len, 0.0], [0.20, 0.90, 0.30, 1.0]),
+                    ([0.0, 0.0, axis_len], [0.20, 0.50, 1.0, 1.0]),
+                ];
+                for (local, col) in axes {
+                    let rot = rotate_vector_by_quat(local, *quat);
+                    let tip = add(chip_pos, rot);
+                    let b = line_vertices.len() as u32;
+                    line_vertices.push(GlVertex { pos: chip_pos, normal: [0.0, 1.0, 0.0], color: col, ao: 1.0 });
+                    line_vertices.push(GlVertex { pos: tip, normal: [0.0, 1.0, 0.0], color: col, ao: 1.0 });
+                    line_indices.extend([b, b + 1]);
+                }
             }
         }
     }
@@ -204,4 +200,20 @@ pub fn draw_scene_3d(
     };
 
     painter.add(callback);
+
+    // 2D Проекционный оверлей меток суставов поверх 3D сцены
+    if placement::show_joints() {
+        for j in &skel.joints {
+            let bone_tag = joint_bone_tag(&j.name);
+            let tf = transforms.and_then(|t| t.get(bone_tag));
+            let world_pos = transform_v3(j.pos, tf);
+
+            if let Some(screen_pos) = camera.project(world_pos, rect) {
+                // Яркие синие маркеры сочленений с контрастной белой сердцевиной
+                painter.circle_filled(screen_pos, 4.0, Color32::from_rgba_premultiplied(0, 140, 255, 140));
+                painter.circle_filled(screen_pos, 2.2, Color32::from_rgb(0, 195, 255));
+                painter.circle_stroke(screen_pos, 4.5, Stroke::new(1.0_f32, Color32::from_rgb(180, 235, 255)));
+            }
+        }
+    }
 }

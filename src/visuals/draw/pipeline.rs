@@ -19,51 +19,70 @@ in vec4 a_color;
 in float a_ao;
 
 uniform mat4 u_mvp;
-uniform vec3 u_light_key;
-uniform vec3 u_light_fill;
-uniform vec3 u_eye_pos;
 uniform int u_is_line;
 
+out vec3 v_pos;
+out vec3 v_normal;
 out vec4 v_color;
+out float v_ao;
+flat out int v_is_line;
 
 void main() {
     gl_Position = u_mvp * vec4(a_pos, 1.0);
-
-    if (u_is_line == 1) {
-        v_color = a_color;
-    } else {
-        vec3 n = normalize(a_normal);
-        vec3 lk = normalize(u_light_key);
-        vec3 lf = normalize(u_light_fill);
-
-        float n_dot_k = clamp(dot(n, lk) * 0.5 + 0.5, 0.0, 1.0);
-        float key = n_dot_k * n_dot_k;
-        float fill = max(dot(n, lf), 0.0) * 0.20;
-
-        vec3 eye_dir = normalize(u_eye_pos - a_pos);
-        float eye_facing = max(dot(n, eye_dir), 0.0);
-        float n_dot_v = clamp(1.0 - eye_facing, 0.0, 1.0);
-        float rim = pow(n_dot_v, 4.0) * 0.12;
-
-        vec3 warm = vec3(1.04, 1.02, 0.98);
-        vec3 cool = vec3(0.92, 0.95, 1.05);
-        vec3 base = a_color.rgb;
-        vec3 blended = base * mix(cool, warm, key);
-
-        float ambient = 0.20;
-        vec3 lit = (blended * (ambient + key * 0.55 + fill) * a_ao) + vec3(rim);
-
-        v_color = vec4(clamp(lit, 0.0, 1.0), a_color.a);
-    }
+    v_pos = a_pos;
+    v_normal = a_normal;
+    v_color = a_color;
+    v_ao = a_ao;
+    v_is_line = u_is_line;
 }
 "#;
 
 const FRAGMENT_SHADER_SRC: &str = r#"
+in vec3 v_pos;
+in vec3 v_normal;
 in vec4 v_color;
+in float v_ao;
+flat in int v_is_line;
+
+uniform vec3 u_light_key;
+uniform vec3 u_light_fill;
+uniform vec3 u_eye_pos;
+
 out vec4 FragColor;
 
 void main() {
-    FragColor = v_color;
+    if (v_is_line == 1) {
+        FragColor = v_color;
+        return;
+    }
+
+    vec3 n = normalize(v_normal);
+    if (!gl_FrontFacing) {
+        n = -n;
+    }
+
+    vec3 lk = normalize(u_light_key);
+    vec3 lf = normalize(u_light_fill);
+
+    // Мягкое полусферическое освещение без резких перепадов на швах
+    float n_dot_k = clamp(dot(n, lk) * 0.45 + 0.55, 0.0, 1.0);
+    float key = n_dot_k * n_dot_k;
+    float fill = max(dot(n, lf), 0.0) * 0.22;
+
+    // Деликатный контурный свет
+    vec3 eye_dir = normalize(u_eye_pos - v_pos);
+    float eye_facing = max(dot(n, eye_dir), 0.0);
+    float rim = pow(clamp(1.0 - eye_facing, 0.0, 1.0), 3.5) * 0.05;
+
+    vec3 warm = vec3(1.02, 1.01, 0.99);
+    vec3 cool = vec3(0.97, 0.98, 1.02);
+    vec3 base = v_color.rgb;
+    vec3 blended = base * mix(cool, warm, key);
+
+    float ambient = 0.26;
+    vec3 lit = (blended * (ambient + key * 0.48 + fill) * v_ao) + vec3(rim);
+
+    FragColor = vec4(clamp(lit, 0.0, 1.0), 1.0);
 }
 "#;
 
@@ -161,6 +180,8 @@ impl GlSceneRenderer {
         line_indices: &[u32],
     ) {
         unsafe {
+            gl.disable(glow::BLEND);
+            gl.disable(glow::CULL_FACE);
             gl.enable(glow::DEPTH_TEST);
             gl.depth_func(glow::LEQUAL);
             gl.depth_mask(true);
@@ -195,11 +216,7 @@ impl GlSceneRenderer {
                 let i_bytes = std::slice::from_raw_parts(tri_indices.as_ptr().cast::<u8>(), tri_indices.len() * std::mem::size_of::<u32>());
                 gl.buffer_data_u8_slice(glow::ELEMENT_ARRAY_BUFFER, i_bytes, glow::DYNAMIC_DRAW);
 
-                gl.enable(glow::CULL_FACE);
-                gl.cull_face(glow::BACK);
-                gl.front_face(glow::CCW);
                 gl.draw_elements(glow::TRIANGLES, tri_indices.len() as i32, glow::UNSIGNED_INT, 0);
-                gl.disable(glow::CULL_FACE);
             }
 
             if !line_indices.is_empty() {
@@ -221,6 +238,7 @@ impl GlSceneRenderer {
             gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, None);
             gl.use_program(None);
             gl.disable(glow::DEPTH_TEST);
+            gl.enable(glow::BLEND);
         }
     }
 }

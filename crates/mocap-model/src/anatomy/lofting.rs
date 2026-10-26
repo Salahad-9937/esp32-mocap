@@ -119,6 +119,7 @@ pub fn loft(b: &mut Builder, rings: &[Ring], bot: Option<f32>, top: Option<f32>,
         idx.extend([k as u32, nk as u32, apex_bot]);
         idx.extend([((l - 1) * n + k) as u32, apex_top, ((l - 1) * n + nk) as u32]);
     }
+
     let normals = mesh_normals(&verts, &idx);
     b.prims.push(Prim::Mesh { vertices: verts, normals, indices: idx, tone });
     b.prim_bones.push(b.current_bone);

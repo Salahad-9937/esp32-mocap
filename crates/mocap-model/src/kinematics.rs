@@ -51,8 +51,8 @@ pub struct KinematicTree {
 impl KinematicTree {
     #[must_use]
     pub fn build() -> Self {
-        let s_r = 1.0_f32;
-        let s_l = -1.0_f32;
+        let s_l = 1.0_f32;
+        let s_r = -1.0_f32;
 
         let bones = vec![
             // ── 1. Осевой скелет (8) ────────────────────────────────────────
@@ -73,22 +73,26 @@ impl KinematicTree {
             SegmentBone { tag: "LeftForearmProx", parent_tag: Some("LeftUpperArmProx"), rest_joint: [s_l * 0.200, 1.108, -0.012] },
             SegmentBone { tag: "LeftForearmDist", parent_tag: Some("LeftForearmProx"), rest_joint: [s_l * 0.210, 0.980, -0.009] },
             SegmentBone { tag: "LeftHand", parent_tag: Some("LeftForearmProx"), rest_joint: [s_l * 0.216, 0.845, -0.006] },
-            // Пальцы левой кисти
-            SegmentBone { tag: "LeftThumbMeta", parent_tag: Some("LeftHand"), rest_joint: [s_l * 0.220, 0.833, 0.008] },
-            SegmentBone { tag: "LeftThumbProx", parent_tag: Some("LeftThumbMeta"), rest_joint: [s_l * 0.226, 0.809, 0.018] },
-            SegmentBone { tag: "LeftThumbDist", parent_tag: Some("LeftThumbProx"), rest_joint: [s_l * 0.231, 0.791, 0.024] },
-            SegmentBone { tag: "LeftIndexProx", parent_tag: Some("LeftHand"), rest_joint: [s_l * 0.219, 0.787, 0.010] },
-            SegmentBone { tag: "LeftIndexMid", parent_tag: Some("LeftIndexProx"), rest_joint: [s_l * 0.219, 0.761, 0.012] },
-            SegmentBone { tag: "LeftIndexDist", parent_tag: Some("LeftIndexMid"), rest_joint: [s_l * 0.219, 0.745, 0.014] },
-            SegmentBone { tag: "LeftMiddleProx", parent_tag: Some("LeftHand"), rest_joint: [s_l * 0.221, 0.784, -0.004] },
-            SegmentBone { tag: "LeftMiddleMid", parent_tag: Some("LeftMiddleProx"), rest_joint: [s_l * 0.221, 0.754, -0.004] },
-            SegmentBone { tag: "LeftMiddleDist", parent_tag: Some("LeftMiddleMid"), rest_joint: [s_l * 0.221, 0.735, -0.004] },
-            SegmentBone { tag: "LeftRingProx", parent_tag: Some("LeftHand"), rest_joint: [s_l * 0.223, 0.787, -0.018] },
-            SegmentBone { tag: "LeftRingMid", parent_tag: Some("LeftRingProx"), rest_joint: [s_l * 0.223, 0.760, -0.019] },
-            SegmentBone { tag: "LeftRingDist", parent_tag: Some("LeftRingMid"), rest_joint: [s_l * 0.223, 0.743, -0.020] },
-            SegmentBone { tag: "LeftPinkyProx", parent_tag: Some("LeftHand"), rest_joint: [s_l * 0.225, 0.793, -0.030] },
-            SegmentBone { tag: "LeftPinkyMid", parent_tag: Some("LeftPinkyProx"), rest_joint: [s_l * 0.225, 0.771, -0.033] },
-            SegmentBone { tag: "LeftPinkyDist", parent_tag: Some("LeftPinkyMid"), rest_joint: [s_l * 0.225, 0.758, -0.035] },
+            // Пальцы левой кисти (I луч)
+            SegmentBone { tag: "LeftThumbMeta", parent_tag: Some("LeftHand"), rest_joint: [s_l * 0.211, 0.823, 0.008] },
+            SegmentBone { tag: "LeftThumbProx", parent_tag: Some("LeftThumbMeta"), rest_joint: [s_l * 0.208, 0.803, 0.015] },
+            SegmentBone { tag: "LeftThumbDist", parent_tag: Some("LeftThumbProx"), rest_joint: [s_l * 0.205, 0.782, 0.029] },
+            // Указательный палец (II)
+            SegmentBone { tag: "LeftIndexProx", parent_tag: Some("LeftHand"), rest_joint: [s_l * 0.216, 0.782, 0.007] },
+            SegmentBone { tag: "LeftIndexMid", parent_tag: Some("LeftIndexProx"), rest_joint: [s_l * 0.213, 0.753, 0.008] },
+            SegmentBone { tag: "LeftIndexDist", parent_tag: Some("LeftIndexMid"), rest_joint: [s_l * 0.210, 0.735, 0.009] },
+            // Средний палец (III)
+            SegmentBone { tag: "LeftMiddleProx", parent_tag: Some("LeftHand"), rest_joint: [s_l * 0.217, 0.778, -0.002] },
+            SegmentBone { tag: "LeftMiddleMid", parent_tag: Some("LeftMiddleProx"), rest_joint: [s_l * 0.214, 0.745, -0.002] },
+            SegmentBone { tag: "LeftMiddleDist", parent_tag: Some("LeftMiddleMid"), rest_joint: [s_l * 0.210, 0.724, -0.002] },
+            // Безымянный палец (IV)
+            SegmentBone { tag: "LeftRingProx", parent_tag: Some("LeftHand"), rest_joint: [s_l * 0.216, 0.781, -0.011] },
+            SegmentBone { tag: "LeftRingMid", parent_tag: Some("LeftRingProx"), rest_joint: [s_l * 0.213, 0.751, -0.012] },
+            SegmentBone { tag: "LeftRingDist", parent_tag: Some("LeftRingMid"), rest_joint: [s_l * 0.210, 0.732, -0.013] },
+            // Мизинец (V)
+            SegmentBone { tag: "LeftPinkyProx", parent_tag: Some("LeftHand"), rest_joint: [s_l * 0.215, 0.786, -0.019] },
+            SegmentBone { tag: "LeftPinkyMid", parent_tag: Some("LeftPinkyProx"), rest_joint: [s_l * 0.213, 0.764, -0.020] },
+            SegmentBone { tag: "LeftPinkyDist", parent_tag: Some("LeftPinkyMid"), rest_joint: [s_l * 0.210, 0.750, -0.021] },
 
             // ── 3. Правая рука и пальцы (22) ────────────────────────────────
             SegmentBone { tag: "RightClavicle", parent_tag: Some("SpineT3"), rest_joint: [s_r * 0.035, 1.44, 0.01] },
@@ -98,22 +102,26 @@ impl KinematicTree {
             SegmentBone { tag: "RightForearmProx", parent_tag: Some("RightUpperArmProx"), rest_joint: [s_r * 0.200, 1.108, -0.012] },
             SegmentBone { tag: "RightForearmDist", parent_tag: Some("RightForearmProx"), rest_joint: [s_r * 0.210, 0.980, -0.009] },
             SegmentBone { tag: "RightHand", parent_tag: Some("RightForearmProx"), rest_joint: [s_r * 0.216, 0.845, -0.006] },
-            // Пальцы правой кисти
-            SegmentBone { tag: "RightThumbMeta", parent_tag: Some("RightHand"), rest_joint: [s_r * 0.220, 0.833, 0.008] },
-            SegmentBone { tag: "RightThumbProx", parent_tag: Some("RightThumbMeta"), rest_joint: [s_r * 0.226, 0.809, 0.018] },
-            SegmentBone { tag: "RightThumbDist", parent_tag: Some("RightThumbProx"), rest_joint: [s_r * 0.231, 0.791, 0.024] },
-            SegmentBone { tag: "RightIndexProx", parent_tag: Some("RightHand"), rest_joint: [s_r * 0.219, 0.787, 0.010] },
-            SegmentBone { tag: "RightIndexMid", parent_tag: Some("RightIndexProx"), rest_joint: [s_r * 0.219, 0.761, 0.012] },
-            SegmentBone { tag: "RightIndexDist", parent_tag: Some("RightIndexMid"), rest_joint: [s_r * 0.219, 0.745, 0.014] },
-            SegmentBone { tag: "RightMiddleProx", parent_tag: Some("RightHand"), rest_joint: [s_r * 0.221, 0.784, -0.004] },
-            SegmentBone { tag: "RightMiddleMid", parent_tag: Some("RightMiddleProx"), rest_joint: [s_r * 0.221, 0.754, -0.004] },
-            SegmentBone { tag: "RightMiddleDist", parent_tag: Some("RightMiddleMid"), rest_joint: [s_r * 0.221, 0.735, -0.004] },
-            SegmentBone { tag: "RightRingProx", parent_tag: Some("RightHand"), rest_joint: [s_r * 0.223, 0.787, -0.018] },
-            SegmentBone { tag: "RightRingMid", parent_tag: Some("RightRingProx"), rest_joint: [s_r * 0.223, 0.760, -0.019] },
-            SegmentBone { tag: "RightRingDist", parent_tag: Some("RightRingMid"), rest_joint: [s_r * 0.223, 0.743, -0.020] },
-            SegmentBone { tag: "RightPinkyProx", parent_tag: Some("RightHand"), rest_joint: [s_r * 0.225, 0.793, -0.030] },
-            SegmentBone { tag: "RightPinkyMid", parent_tag: Some("RightPinkyProx"), rest_joint: [s_r * 0.225, 0.771, -0.033] },
-            SegmentBone { tag: "RightPinkyDist", parent_tag: Some("RightPinkyMid"), rest_joint: [s_r * 0.225, 0.758, -0.035] },
+            // Пальцы правой кисти (I луч)
+            SegmentBone { tag: "RightThumbMeta", parent_tag: Some("RightHand"), rest_joint: [s_r * 0.211, 0.823, 0.008] },
+            SegmentBone { tag: "RightThumbProx", parent_tag: Some("RightThumbMeta"), rest_joint: [s_r * 0.208, 0.803, 0.015] },
+            SegmentBone { tag: "RightThumbDist", parent_tag: Some("RightThumbProx"), rest_joint: [s_r * 0.205, 0.782, 0.029] },
+            // Указательный палец (II)
+            SegmentBone { tag: "RightIndexProx", parent_tag: Some("RightHand"), rest_joint: [s_r * 0.216, 0.782, 0.007] },
+            SegmentBone { tag: "RightIndexMid", parent_tag: Some("RightIndexProx"), rest_joint: [s_r * 0.213, 0.753, 0.008] },
+            SegmentBone { tag: "RightIndexDist", parent_tag: Some("RightIndexMid"), rest_joint: [s_r * 0.210, 0.735, 0.009] },
+            // Средний палец (III)
+            SegmentBone { tag: "RightMiddleProx", parent_tag: Some("RightHand"), rest_joint: [s_r * 0.217, 0.778, -0.002] },
+            SegmentBone { tag: "RightMiddleMid", parent_tag: Some("RightMiddleProx"), rest_joint: [s_r * 0.214, 0.745, -0.002] },
+            SegmentBone { tag: "RightMiddleDist", parent_tag: Some("RightMiddleMid"), rest_joint: [s_r * 0.210, 0.724, -0.002] },
+            // Безымянный палец (IV)
+            SegmentBone { tag: "RightRingProx", parent_tag: Some("RightHand"), rest_joint: [s_r * 0.216, 0.781, -0.011] },
+            SegmentBone { tag: "RightRingMid", parent_tag: Some("RightRingProx"), rest_joint: [s_r * 0.213, 0.751, -0.012] },
+            SegmentBone { tag: "RightRingDist", parent_tag: Some("RightRingMid"), rest_joint: [s_r * 0.210, 0.732, -0.013] },
+            // Мизинец (V)
+            SegmentBone { tag: "RightPinkyProx", parent_tag: Some("RightHand"), rest_joint: [s_r * 0.215, 0.786, -0.019] },
+            SegmentBone { tag: "RightPinkyMid", parent_tag: Some("RightPinkyProx"), rest_joint: [s_r * 0.213, 0.764, -0.020] },
+            SegmentBone { tag: "RightPinkyDist", parent_tag: Some("RightPinkyMid"), rest_joint: [s_r * 0.210, 0.750, -0.021] },
 
             // ── 4. Левая нога (6) ───────────────────────────────────────────
             SegmentBone { tag: "LeftThighProx", parent_tag: Some("Sacrum"), rest_joint: [s_l * 0.096, 0.905, -0.005] },
@@ -174,13 +182,9 @@ impl KinematicTree {
             }
             Some(p_tag) => {
                 let p_tf = self.evaluate_bone(p_tag, orientations, transforms);
-                // Положение сустава: родительский сустав + родительский поворот * дельта покоя
                 let delta_rest = sub(b.rest_joint, p_tf.rest_joint);
                 let delta_world = rotate_vec_by_quat(delta_rest, p_tf.world_rot);
                 let world_joint = add(p_tf.world_joint, delta_world);
-
-                // Абсолютная мировая ориентация: если датчик есть - берем его чистый кватернион;
-                // если датчика нет - звено повторяет мировую ориентацию родителя
                 let world_rot = local_measured_q.unwrap_or(p_tf.world_rot);
 
                 BoneTransform {

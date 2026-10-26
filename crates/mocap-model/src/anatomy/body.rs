@@ -1,12 +1,11 @@
 //! # Анатомические сегменты торса, конечностей и кистей (`body`)
 
-use super::super::math::{add, cross, dot, lerp, madd, mirror, norm, scale, sub, V3};
+use super::super::math::{add, cross, dot, madd, mirror, norm, scale, sub, V3};
 use super::super::skeleton::{JointKind, Prim, Side, Tone};
 use super::lofting::{loft, Ring};
 use super::{cr, lin, Builder, FRONT, UP, X};
 
 pub const WRIST: V3 = [0.216, 0.845, -0.006];
-pub const HS: f32 = 1.3;
 pub const ZS: f32 = 1.3;
 pub const WS: f32 = 1.35;
 
@@ -177,7 +176,7 @@ pub fn shoulder_and_arm(b: &mut Builder, side: Side) {
     super::lofting::limb(b, Some(format!("{p}Ulna")), elbow, wrist, &fprof, 1.0, FRONT, out, false, false);
     b.seg_only(format!("{p}Radius"), elbow, wrist, fprof.to_vec(), FRONT, out);
     let wrist_joint = m(WRIST);
-    b.ball(wrist_joint, 0.021, Tone::Plate);
+    b.ball(wrist_joint, 0.0135, Tone::Plate);
 
     b.joint(&format!("{p}SC"), JointKind::Saddle, m([0.035, 1.44, 0.01]), Some("C7T1"), 0.005, None);
     b.joint(&format!("{p}GH"), JointKind::Ball, gh, Some(&format!("{p}SC")), 0.008, None);
@@ -188,44 +187,77 @@ pub fn shoulder_and_arm(b: &mut Builder, side: Side) {
 pub fn hand(b: &mut Builder, side: Side) {
     let s = side.sign();
     let p = side.prefix();
-    let rel = |dx: f32, dy: f32, dz: f32| mirror(s, [WRIST[0] + dx * HS, WRIST[1] + dy * HS, WRIST[2] + dz * HS]);
+    let rel = |dx: f32, dy: f32, dz: f32| mirror(s, [WRIST[0] + dx, WRIST[1] + dy, WRIST[2] + dz]);
     let out = [s, 0.0, 0.0];
     let wrist_name = format!("{p}Wrist");
-    b.joint(&wrist_name, JointKind::Condyloid, mirror(s, WRIST), Some(&format!("{p}Radioulnar")), 0.006, None);
+    let wrist_pos = mirror(s, WRIST);
+    b.joint(&wrist_name, JointKind::Condyloid, wrist_pos, Some(&format!("{p}Radioulnar")), 0.005, None);
 
     let hand_tag = if side == Side::Left { "LeftHand" } else { "RightHand" };
     b.set_bone(hand_tag);
 
-    let (pa, pe) = (rel(-0.003, -0.010, -0.004), rel(-0.005, -0.056, -0.004));
-    let pp = [(0.0_f32, 0.0125_f32, 0.020_f32), (0.35, 0.0140, 0.032), (1.0, 0.0120, 0.036)];
-    let mut rings: Vec<Ring> = pp
-        .iter()
-        .map(|&(t, rx, rz)| Ring { c: lerp(pa, pe, t), rx, rz, ex: 2.0 })
-        .collect();
-    rings.reverse();
-    loft(b, &rings, Some(0.0075), Some(0.010), Tone::Cortical);
-    b.seg_only(format!("{p}MC3"), pa, pe, pp.iter().map(|&(t, rx, _)| (t, rx)).collect(), out, FRONT);
+    // 1. Центральное тело пясти (анатомический свод от запястья к дуге костяшек)
+    let palm_rings = [
+        Ring { c: rel(0.000, -0.063, 0.000), rx: 0.0075, rz: 0.0195, ex: 2.2 },
+        Ring { c: rel(0.000, -0.056, 0.000), rx: 0.0090, rz: 0.0205, ex: 2.3 },
+        Ring { c: rel(-0.001, -0.040, 0.000), rx: 0.0110, rz: 0.0195, ex: 2.3 },
+        Ring { c: rel(-0.001, -0.022, 0.000), rx: 0.0115, rz: 0.0175, ex: 2.2 },
+        Ring { c: rel(0.000, -0.007, -0.001), rx: 0.0105, rz: 0.0145, ex: 2.1 },
+    ];
+    loft(b, &palm_rings, Some(0.0035), Some(0.0035), Tone::Cortical);
 
+    // 2. Тенар (каплевидный мышечный корень большого пальца)
+    let thenar_a = rel(-0.003, -0.012, 0.006);
+    let thenar_b = rel(-0.007, -0.038, 0.017);
+    b.cap(thenar_a, thenar_b, 0.0085, 0.0070, Tone::Cortical);
+
+    // Мягкий переход от тенара к ладони
+    let thenar_fill_a = rel(-0.004, -0.022, 0.008);
+    let thenar_fill_b = rel(-0.006, -0.040, 0.012);
+    b.cap(thenar_fill_a, thenar_fill_b, 0.0075, 0.0065, Tone::Cortical);
+
+    // 3. Гипотенар (ульнарный валик ладони со стороны мизинца)
+    let hypo_a = rel(-0.003, -0.014, -0.008);
+    let hypo_b = rel(-0.003, -0.048, -0.013);
+    b.cap(hypo_a, hypo_b, 0.0070, 0.0060, Tone::Cortical);
+
+    // Опорная площадка для IMU-датчика тыла кисти (MC3)
+    let mc3_a = rel(0.0075, -0.016, 0.002);
+    let mc3_b = rel(0.0065, -0.052, 0.003);
+    b.seg_only(format!("{p}MC3"), mc3_a, mc3_b, vec![(0.0, 0.004), (1.0, 0.004)], out, FRONT);
+
+    // 4. Пальцы II–V (MCP, фаланги и сочленения)
     let names = ["Index", "Middle", "Ring", "Pinky"];
-    let mcp_dx = [-0.003, -0.005, -0.007, -0.009];
-    let mcp_dy = [-0.058, -0.061, -0.058, -0.052];
-    let mcp_dz = [0.016, 0.002, -0.012, -0.024];
-    let lens = [[0.026, 0.016, 0.012], [0.030, 0.019, 0.013], [0.027, 0.017, 0.012], [0.022, 0.013, 0.010]];
-    let fan = [0.04_f32, 0.0, -0.03, -0.08];
-    let theta = [5.0_f32, 20.0, 30.0];
-    let radii = [(0.0055, 0.0048), (0.0048, 0.0040), (0.0040, 0.0034)];
+    let mcp_coords = [
+        rel(0.000, -0.063, 0.013),   // Index (II)
+        rel(0.001, -0.067, 0.004),   // Middle (III, пик арки)
+        rel(0.000, -0.064, -0.005),  // Ring (IV)
+        rel(-0.001, -0.059, -0.013), // Pinky (V, проксимальный сдвиг)
+    ];
+    let knuckle_r = [0.0045, 0.0048, 0.0045, 0.0038];
+    let lens = [
+        [0.029, 0.018, 0.013], // Index
+        [0.033, 0.021, 0.015], // Middle
+        [0.030, 0.019, 0.014], // Ring
+        [0.022, 0.014, 0.011], // Pinky
+    ];
+    let fan = [0.025_f32, 0.0, -0.016, -0.035];
+    let theta = [4.0_f32, 8.0, 12.0];
+    let radii = [(0.0042, 0.0036), (0.0036, 0.0031), (0.0031, 0.0024)];
     let phal = ["PP", "MP", "DP"];
 
     for f in 0..4 {
-        let mcp = rel(mcp_dx[f], mcp_dy[f], mcp_dz[f]);
+        let mcp = mcp_coords[f];
         let mcp_name = format!("{p}MCP{}", f + 2);
+        b.ball(mcp, knuckle_r[f], Tone::Plate);
         b.joint(&mcp_name, JointKind::Condyloid, mcp, Some(&wrist_name), 0.003, None);
+
         let mut prev = mcp_name;
         let mut cur = mcp;
         for k in 0..3 {
             let th = theta[k].to_radians();
             let dir = norm([-s * th.sin(), -th.cos(), fan[f]]);
-            let next = madd(cur, dir, lens[f][k] * HS);
+            let next = madd(cur, dir, lens[f][k]);
             let finger_tag = match (f, k) {
                 (0, 0) => if side == Side::Left { "LeftIndexProx" } else { "RightIndexProx" },
                 (0, 1) => if side == Side::Left { "LeftIndexMid" } else { "RightIndexMid" },
@@ -241,31 +273,41 @@ pub fn hand(b: &mut Builder, side: Side) {
                 _ => if side == Side::Left { "LeftPinkyDist" } else { "RightPinkyDist" },
             };
             b.set_bone(finger_tag);
-            b.part(format!("{p}{}{}", names[f], phal[k]), cur, next, radii[k].0 * HS, radii[k].1 * HS, out, FRONT);
+            b.part(format!("{p}{}{}", names[f], phal[k]), cur, next, radii[k].0, radii[k].1, out, FRONT);
             if k < 2 {
                 let jn = format!("{p}{}{}", if k == 0 { "PIP" } else { "DIP" }, f + 2);
-                b.joint(&jn, JointKind::Hinge, next, Some(&prev), 0.0022, Some(FRONT));
+                let joint_r = if k == 0 { 0.0036 } else { 0.0030 };
+                b.ball(next, joint_r, Tone::Plate);
+                b.joint(&jn, JointKind::Hinge, next, Some(&prev), 0.002, Some(FRONT));
                 prev = jn;
             }
             cur = next;
         }
     }
 
-    let cmc = rel(-0.004, -0.012, 0.014);
-    let mcp1 = rel(-0.010, -0.036, 0.024);
-    let ip1 = rel(-0.015, -0.054, 0.030);
-    let tip1 = rel(-0.020, -0.068, 0.036);
-    let n0 = norm([s, 0.0, 0.4]);
+    // 5. Большой палец (I луч: опора в тенаре, оппозиция и суставы CMC1 / MCP1 / IP1)
+    let cmc = rel(-0.005, -0.022, 0.014);
+    let mcp1 = rel(-0.008, -0.042, 0.021);
+    let dir_pp1 = norm([-s * 0.10, -0.82, 0.56]);
+    let ip1 = madd(mcp1, dir_pp1, 0.025);
+    let dir_dp1 = norm([-s * 0.12, -0.80, 0.59]);
+    let tip1 = madd(ip1, dir_dp1, 0.018);
+
+    let n0_thumb = norm([s * 0.70, 0.0, 0.70]);
 
     b.set_bone(if side == Side::Left { "LeftThumbMeta" } else { "RightThumbMeta" });
-    b.part(format!("{p}ThumbMC"), cmc, mcp1, 0.0075 * HS, 0.0062 * HS, n0, UP);
+    b.part(format!("{p}ThumbMC"), cmc, mcp1, 0.0065, 0.0058, n0_thumb, UP);
+
     b.set_bone(if side == Side::Left { "LeftThumbProx" } else { "RightThumbProx" });
-    b.part(format!("{p}ThumbPP"), mcp1, ip1, 0.0062 * HS, 0.0054 * HS, n0, UP);
+    b.ball(mcp1, 0.0050, Tone::Plate);
+    b.part(format!("{p}ThumbPP"), mcp1, ip1, 0.0055, 0.0046, n0_thumb, UP);
+
     b.set_bone(if side == Side::Left { "LeftThumbDist" } else { "RightThumbDist" });
-    b.part(format!("{p}ThumbDP"), ip1, tip1, 0.0054 * HS, 0.0044 * HS, n0, UP);
+    b.ball(ip1, 0.0042, Tone::Plate);
+    b.part(format!("{p}ThumbDP"), ip1, tip1, 0.0046, 0.0032, n0_thumb, UP);
 
     b.joint(&format!("{p}CMC1"), JointKind::Saddle, cmc, Some(&wrist_name), 0.003, None);
-    b.joint(&format!("{p}MCP1"), JointKind::Condyloid, mcp1, Some(&format!("{p}CMC1")), 0.0025, None);
+    b.joint(&format!("{p}MCP1"), JointKind::Hinge, mcp1, Some(&format!("{p}CMC1")), 0.0025, Some(FRONT));
     b.joint(&format!("{p}IP1"), JointKind::Hinge, ip1, Some(&format!("{p}MCP1")), 0.002, Some(FRONT));
 }
 
