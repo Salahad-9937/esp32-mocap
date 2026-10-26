@@ -1,6 +1,7 @@
 default: run
 
 # Run MoCap UI application
+[no-exit-message]
 run:
 	cargo run
 

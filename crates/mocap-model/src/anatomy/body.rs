@@ -215,7 +215,6 @@ pub fn hand(b: &mut Builder, side: Side) {
     let theta = [5.0_f32, 20.0, 30.0];
     let radii = [(0.0055, 0.0048), (0.0048, 0.0040), (0.0040, 0.0034)];
     let phal = ["PP", "MP", "DP"];
-    let p_full = if side == Side::Left { "Left" } else { "Right" };
 
     for f in 0..4 {
         let mcp = rel(mcp_dx[f], mcp_dy[f], mcp_dz[f]);
@@ -227,11 +226,6 @@ pub fn hand(b: &mut Builder, side: Side) {
             let th = theta[k].to_radians();
             let dir = norm([-s * th.sin(), -th.cos(), fan[f]]);
             let next = madd(cur, dir, lens[f][k] * HS);
-            let sub_name = match k {
-                0 => "Prox",
-                1 => "Mid",
-                _ => "Dist",
-            };
             let finger_tag = match (f, k) {
                 (0, 0) => if side == Side::Left { "LeftIndexProx" } else { "RightIndexProx" },
                 (0, 1) => if side == Side::Left { "LeftIndexMid" } else { "RightIndexMid" },

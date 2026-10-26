@@ -11,6 +11,8 @@ dist/
 
 # Context tool & LLM workflow artifacts
 project_context.txt
+mapping_profile.toml
+mocap_config.toml
 supplement_*.txt
 changes.txt
 .context_state.toml

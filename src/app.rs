@@ -7,6 +7,7 @@ use crate::views::{CalibrationView, MapperView, TopologyView, TrackingView};
 use crate::visuals::{render_3d_scene, OrbitalCamera};
 use egui::{Color32, Frame, Margin, RichText, Stroke, TextWrapMode, Visuals};
 use mocap_core::mapping::MappingProfile;
+use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,6 +22,7 @@ pub enum ActiveTab {
 
 pub struct MocapApp {
     pub config: AppConfig,
+    pub config_path: PathBuf,
     pub shared: SharedStateHandle,
     pub connection_status: ConnectionStatus,
     pub active_tab: ActiveTab,
@@ -33,8 +35,7 @@ pub struct MocapApp {
 
 impl MocapApp {
     #[must_use]
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        let config = AppConfig::default();
+    pub fn new(_cc: &eframe::CreationContext<'_>, config: AppConfig, config_path: PathBuf) -> Self {
         let shared = Arc::new(SharedTelemetryState::default());
 
         shared.is_running.store(true, Ordering::SeqCst);
@@ -57,6 +58,7 @@ impl MocapApp {
 
         Self {
             config,
+            config_path,
             shared,
             connection_status: ConnectionStatus::Connecting,
             active_tab: ActiveTab::Topology,
@@ -69,19 +71,23 @@ impl MocapApp {
     }
 
     fn update_connection_status(&mut self) {
-        if let Ok(inst_guard) = self.shared.last_frame_instant.lock() {
-            if let Some(instant) = *inst_guard {
-                if instant.elapsed() > Duration::from_millis(500) {
-                    if let Ok(mut nodes_guard) = self.shared.nodes.lock() {
-                        nodes_guard.clear();
-                    }
-                    if let Ok(mut fps_guard) = self.shared.calculated_fps.lock() {
-                        *fps_guard = 0.0;
-                    }
-                    self.shared.detected_mux_mask.store(0, Ordering::Relaxed);
-                    if let Ok(mut err_guard) = self.shared.connection_error.lock() {
-                        if err_guard.is_none() || err_guard.as_deref() == Some("") {
-                            *err_guard = Some("Поиск устройства (таймаут данных)...".to_string());
+        let is_paused = self.shared.is_paused.load(Ordering::Relaxed);
+
+        if !is_paused {
+            if let Ok(inst_guard) = self.shared.last_frame_instant.lock() {
+                if let Some(instant) = *inst_guard {
+                    if instant.elapsed() > Duration::from_millis(500) {
+                        if let Ok(mut nodes_guard) = self.shared.nodes.lock() {
+                            nodes_guard.clear();
+                        }
+                        if let Ok(mut fps_guard) = self.shared.calculated_fps.lock() {
+                            *fps_guard = 0.0;
+                        }
+                        self.shared.detected_mux_mask.store(0, Ordering::Relaxed);
+                        if let Ok(mut err_guard) = self.shared.connection_error.lock() {
+                            if err_guard.is_none() || err_guard.as_deref() == Some("") {
+                                *err_guard = Some("Поиск устройства (таймаут данных)...".to_string());
+                            }
                         }
                     }
                 }
@@ -94,6 +100,8 @@ impl MocapApp {
         if let Ok(err_guard) = self.shared.connection_error.lock() {
             if !wants_connected {
                 self.connection_status = ConnectionStatus::Disconnected;
+            } else if is_paused && (fps > 0.0 || self.connection_status == ConnectionStatus::Connected || self.connection_status == ConnectionStatus::Paused) {
+                self.connection_status = ConnectionStatus::Paused;
             } else if fps > 0.0 {
                 self.connection_status = ConnectionStatus::Connected;
             } else if let Some(ref err_msg) = *err_guard {
@@ -182,7 +190,7 @@ impl eframe::App for MocapApp {
                     let start_x = ui.cursor().min.x;
 
                     let btn_text = match self.connection_status {
-                        ConnectionStatus::Connected => "Отключиться",
+                        ConnectionStatus::Connected | ConnectionStatus::Paused => "Отключиться",
                         _ => "Подключиться",
                     };
 
@@ -196,11 +204,13 @@ impl eframe::App for MocapApp {
 
                     if ui.add(btn).clicked() {
                         match self.connection_status {
-                            ConnectionStatus::Connected | ConnectionStatus::Connecting => {
+                            ConnectionStatus::Connected | ConnectionStatus::Connecting | ConnectionStatus::Paused => {
                                 self.shared.user_wants_connected.store(false, Ordering::SeqCst);
+                                self.shared.is_paused.store(false, Ordering::SeqCst);
                             }
                             _ => {
                                 self.shared.user_wants_connected.store(true, Ordering::SeqCst);
+                                self.shared.is_paused.store(false, Ordering::SeqCst);
                                 if let Ok(mut err_guard) = self.shared.connection_error.lock() {
                                     *err_guard = None;
                                 }
@@ -213,6 +223,16 @@ impl eframe::App for MocapApp {
                     let mut auto_rec = self.shared.auto_reconnect.load(Ordering::Relaxed);
                     if ui.checkbox(&mut auto_rec, RichText::new("Авто-реконнект").size(13.5)).changed() {
                         self.shared.auto_reconnect.store(auto_rec, Ordering::SeqCst);
+                        self.config.auto_reconnect = auto_rec;
+                        let _ = self.config.save_to_file(&self.config_path);
+                    }
+
+                    if self.connection_status == ConnectionStatus::Connected || self.connection_status == ConnectionStatus::Paused {
+                        ui.add_space(8.0);
+                        let mut paused = self.shared.is_paused.load(Ordering::Relaxed);
+                        if ui.checkbox(&mut paused, RichText::new("Пауза").size(13.5)).changed() {
+                            self.shared.is_paused.store(paused, Ordering::SeqCst);
+                        }
                     }
 
                     ui.min_rect().max.x - start_x
@@ -221,7 +241,6 @@ impl eframe::App for MocapApp {
 
                 ui.add_space(4.0);
 
-                // ── 4 режима интерфейса: Топология | Маппинг | Калибровка | Захват ──
                 let mut clicked_tab = None;
                 ui.horizontal(|ui| {
                     for (tab, text) in [

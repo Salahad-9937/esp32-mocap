@@ -8,9 +8,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-pub type RawNodeMeasurement = RawNodeData;
-pub type CalibratedMeasurement = ImuSample;
-
 /// Полный дескриптор состояния активного узла с ориентацией и привязкой к кости.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeTelemetry {
