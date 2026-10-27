@@ -145,43 +145,84 @@ pub fn shoulder_and_arm(b: &mut Builder, side: Side) {
     let upper_arm_tag = if side == Side::Left { "LeftUpperArmProx" } else { "RightUpperArmProx" };
     let forearm_tag = if side == Side::Left { "LeftForearmProx" } else { "RightForearmProx" };
 
+    // 1. Плечевой пояс: Ключица и Акромиальный козырек лопатки
     b.set_bone(clavicle_tag);
-    let (ta, tb) = (m([0.045, 1.428, -0.012]), m([0.172, 1.395, -0.015]));
-    b.part(format!("{p}Clavicle"), ta, tb, 0.034, 0.040, UP, FRONT);
-    b.seg_only(format!("{p}Acromion"), ta, tb, vec![(0.0, 0.034), (1.0, 0.040)], UP, FRONT);
+    let sc_pt = m([0.038, 1.436, 0.014]);
+    let ac_pt = m([0.168, 1.408, -0.014]);
+    b.part(format!("{p}Clavicle"), sc_pt, ac_pt, 0.024, 0.030, UP, FRONT);
 
     b.set_bone(shoulder_tag);
-    let gh = m([0.178, 1.390, -0.012]);
-    b.ball(gh, 0.046, Tone::Plate);
+    let acromion_hood_a = m([0.138, 1.416, -0.018]);
+    let acromion_hood_b = m([0.186, 1.402, -0.020]);
+    b.cap(acromion_hood_a, acromion_hood_b, 0.024, 0.026, Tone::Cortical);
+    b.seg_only(format!("{p}Acromion"), acromion_hood_a, acromion_hood_b, vec![(0.0, 0.024), (1.0, 0.026)], UP, FRONT);
 
+    // Плечевой шаровидный сустав (GH)
+    let gh = m([0.178, 1.390, -0.012]);
+    b.ball(gh, 0.036, Tone::Plate);
+
+    // 2. Плечо (Brachium): дельтовидный окат + трехгранное тело + надмыщелки локтя
     b.set_bone(upper_arm_tag);
-    let elbow = m([0.200, 1.108, -0.012]);
-    super::lofting::limb(
-        b,
-        Some(format!("{p}UpperArm")),
+    let elbow = m([0.198, 1.108, -0.012]);
+
+    let humerus_rings = [
+        Ring { c: m([0.198, 1.118, -0.012]), rx: 0.033, rz: 0.023, ex: 2.3 },
+        Ring { c: m([0.194, 1.175, -0.012]), rx: 0.031, rz: 0.027, ex: 2.2 },
+        Ring { c: m([0.188, 1.245, -0.012]), rx: 0.034, rz: 0.035, ex: 2.2 },
+        Ring { c: m([0.183, 1.315, -0.013]), rx: 0.038, rz: 0.037, ex: 2.1 },
+        Ring { c: m([0.178, 1.378, -0.013]), rx: 0.042, rz: 0.040, ex: 2.0 },
+    ];
+    loft(b, &humerus_rings, Some(0.008), Some(0.016), Tone::Cortical);
+
+    b.seg_only(
+        format!("{p}UpperArm"),
         gh,
         elbow,
-        &[(0.0, 0.040), (0.15, 0.041), (0.5, 0.034), (1.0, 0.027)],
-        1.0,
+        vec![(0.0, 0.040), (0.30, 0.037), (0.72, 0.030), (1.0, 0.026)],
         FRONT,
         out,
-        true,
-        false,
     );
-    b.ball(elbow, 0.030, Tone::Plate);
 
+    // 3. Анатомический блоковидный узел локтя: поперечный валик (Hinge Spool) + Olecranon
+    let ep_med = m([0.181, 1.108, -0.012]);
+    let ep_lat = m([0.215, 1.108, -0.012]);
+    b.cap(ep_med, ep_lat, 0.015, 0.013, Tone::Plate);
+
+    // Локтевой отросток сзади (Olecranon) — костное ребро локтя
+    let olecranon_a = m([0.198, 1.118, -0.018]);
+    let olecranon_b = m([0.198, 1.096, -0.023]);
+    b.cap(olecranon_a, olecranon_b, 0.012, 0.010, Tone::Plate);
+
+    // Медиальный мыщелковый выступ внутрь
+    let epicondyle_med_bump = m([0.177, 1.108, -0.012]);
+    b.ball(epicondyle_med_bump, 0.0065, Tone::Plate);
+
+    // 4. Предплечье (Antebrachium): латеральный валик плечелучевой мышцы + стройный конический сход
     b.set_bone(forearm_tag);
     let wrist = m([0.216, 0.858, -0.006]);
-    let fprof = [(0.0, 0.029), (0.2, 0.030), (0.6, 0.024), (1.0, 0.018)];
-    super::lofting::limb(b, Some(format!("{p}Ulna")), elbow, wrist, &fprof, 1.0, FRONT, out, false, false);
-    b.seg_only(format!("{p}Radius"), elbow, wrist, fprof.to_vec(), FRONT, out);
-    let wrist_joint = m(WRIST);
-    b.ball(wrist_joint, 0.0135, Tone::Plate);
 
-    b.joint(&format!("{p}SC"), JointKind::Saddle, m([0.035, 1.44, 0.01]), Some("C7T1"), 0.005, None);
+    let forearm_rings = [
+        Ring { c: m([0.216, 0.855, -0.006]), rx: 0.0115, rz: 0.0110, ex: 2.1 },
+        Ring { c: m([0.215, 0.875, -0.006]), rx: 0.0145, rz: 0.0125, ex: 2.2 },
+        Ring { c: m([0.213, 0.925, -0.007]), rx: 0.0190, rz: 0.0160, ex: 2.2 },
+        Ring { c: m([0.209, 0.985, -0.009]), rx: 0.0250, rz: 0.0210, ex: 2.3 },
+        Ring { c: m([0.204, 1.045, -0.008]), rx: 0.0320, rz: 0.0260, ex: 2.3 },
+        Ring { c: m([0.199, 1.096, -0.011]), rx: 0.0260, rz: 0.0220, ex: 2.1 },
+    ];
+    loft(b, &forearm_rings, Some(0.003), Some(0.008), Tone::Cortical);
+
+    let fprof = vec![(0.0, 0.026), (0.30, 0.029), (0.72, 0.019), (1.0, 0.014)];
+    b.seg_only(format!("{p}Ulna"), elbow, wrist, fprof.clone(), FRONT, out);
+    b.seg_only(format!("{p}Radius"), elbow, wrist, fprof, FRONT, out);
+
+    // 5. Лучезапястный шарнир: компактный эстетичный шаровой шарнир манекена
+    let wrist_joint = m(WRIST);
+    b.ball(wrist_joint, 0.0105, Tone::Plate);
+
+    // Кинематические сочленения: прямая кинематическая цепь руки SC -> GH -> Elbow -> Wrist
+    b.joint(&format!("{p}SC"), JointKind::Saddle, m([0.038, 1.436, 0.014]), Some("C7T1"), 0.005, None);
     b.joint(&format!("{p}GH"), JointKind::Ball, gh, Some(&format!("{p}SC")), 0.008, None);
-    b.joint(&format!("{p}Elbow"), JointKind::Hinge, elbow, Some(&format!("{p}GH")), 0.007, Some(X));
-    b.joint(&format!("{p}Radioulnar"), JointKind::Pivot, m([0.206, 1.08, -0.01]), Some(&format!("{p}Elbow")), 0.005, None);
+    b.joint(&format!("{p}Elbow"), JointKind::Hinge, elbow, Some(&format!("{p}GH")), 0.006, Some(X));
 }
 
 pub fn hand(b: &mut Builder, side: Side) {
@@ -191,27 +232,27 @@ pub fn hand(b: &mut Builder, side: Side) {
     let out = [s, 0.0, 0.0];
     let wrist_name = format!("{p}Wrist");
     let wrist_pos = mirror(s, WRIST);
-    b.joint(&wrist_name, JointKind::Condyloid, wrist_pos, Some(&format!("{p}Radioulnar")), 0.005, None);
+    // Лучезапястный сустав соединяется напрямую с локтем (Elbow), формируя жесткое звено предплечья
+    b.joint(&wrist_name, JointKind::Condyloid, wrist_pos, Some(&format!("{p}Elbow")), 0.005, None);
 
     let hand_tag = if side == Side::Left { "LeftHand" } else { "RightHand" };
     b.set_bone(hand_tag);
 
-    // 1. Центральное тело пясти (анатомический свод от запястья к дуге костяшек)
+    // 1. Центральное тело пясти: плавное расширение от шарнира запястья к костяшкам
     let palm_rings = [
-        Ring { c: rel(0.000, -0.063, 0.000), rx: 0.0075, rz: 0.0195, ex: 2.2 },
-        Ring { c: rel(0.000, -0.056, 0.000), rx: 0.0090, rz: 0.0205, ex: 2.3 },
-        Ring { c: rel(-0.001, -0.040, 0.000), rx: 0.0110, rz: 0.0195, ex: 2.3 },
-        Ring { c: rel(-0.001, -0.022, 0.000), rx: 0.0115, rz: 0.0175, ex: 2.2 },
-        Ring { c: rel(0.000, -0.007, -0.001), rx: 0.0105, rz: 0.0145, ex: 2.1 },
+        Ring { c: rel(0.000, -0.062, 0.000), rx: 0.0075, rz: 0.0185, ex: 2.2 },
+        Ring { c: rel(0.000, -0.054, 0.000), rx: 0.0090, rz: 0.0195, ex: 2.3 },
+        Ring { c: rel(-0.001, -0.038, 0.000), rx: 0.0110, rz: 0.0185, ex: 2.3 },
+        Ring { c: rel(-0.001, -0.020, 0.000), rx: 0.0105, rz: 0.0155, ex: 2.2 },
+        Ring { c: rel(0.000, -0.006, -0.001), rx: 0.0095, rz: 0.0120, ex: 2.1 },
     ];
-    loft(b, &palm_rings, Some(0.0035), Some(0.0035), Tone::Cortical);
+    loft(b, &palm_rings, Some(0.003), Some(0.003), Tone::Cortical);
 
     // 2. Тенар (каплевидный мышечный корень большого пальца)
     let thenar_a = rel(-0.003, -0.012, 0.006);
     let thenar_b = rel(-0.007, -0.038, 0.017);
     b.cap(thenar_a, thenar_b, 0.0085, 0.0070, Tone::Cortical);
 
-    // Мягкий переход от тенара к ладони
     let thenar_fill_a = rel(-0.004, -0.022, 0.008);
     let thenar_fill_b = rel(-0.006, -0.040, 0.012);
     b.cap(thenar_fill_a, thenar_fill_b, 0.0075, 0.0065, Tone::Cortical);
@@ -236,10 +277,10 @@ pub fn hand(b: &mut Builder, side: Side) {
     ];
     let knuckle_r = [0.0045, 0.0048, 0.0045, 0.0038];
     let lens = [
-        [0.029, 0.018, 0.013], // Index
-        [0.033, 0.021, 0.015], // Middle
-        [0.030, 0.019, 0.014], // Ring
-        [0.022, 0.014, 0.011], // Pinky
+        [0.029, 0.018, 0.013],
+        [0.033, 0.021, 0.015],
+        [0.030, 0.019, 0.014],
+        [0.022, 0.014, 0.011],
     ];
     let fan = [0.025_f32, 0.0, -0.016, -0.035];
     let theta = [4.0_f32, 8.0, 12.0];

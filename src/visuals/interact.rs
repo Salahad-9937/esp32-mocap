@@ -43,17 +43,30 @@ fn show_tools(ctx: &Context, rect: Rect) {
                 ui.add_space(2.0);
                 ui.separator();
 
-                ui.label(RichText::new("Отображение элементов").strong());
-                ui.horizontal(|ui| {
-                    let mut show_sensors = placement::show_sensors();
-                    if ui.checkbox(&mut show_sensors, RichText::new("🏷 Датчики").strong()).changed() {
-                        placement::set_show_sensors(show_sensors);
+                // Независимая матрица переключателей визуализации
+                ui.label(RichText::new("Режимы отображения").strong());
+                ui.horizontal_wrapped(|ui| {
+                    let mut show_mesh = placement::show_mesh();
+                    if ui.checkbox(&mut show_mesh, "🧍 Манекен").on_hover_text("Показать/скрыть 3D-тело манекена").changed() {
+                        placement::set_show_mesh(show_mesh);
+                        ctx.request_repaint();
+                    }
+
+                    let mut show_skel = placement::show_skeleton();
+                    if ui.checkbox(&mut show_skel, "🦴 Скелет").on_hover_text("Показать отладочный каркас кинематических связей").changed() {
+                        placement::set_show_skeleton(show_skel);
                         ctx.request_repaint();
                     }
 
                     let mut show_joints = placement::show_joints();
-                    if ui.checkbox(&mut show_joints, RichText::new("🔵 Суставы").strong()).changed() {
+                    if ui.checkbox(&mut show_joints, "🔵 Суставы").on_hover_text("Показать маркеры шарниров сочленений").changed() {
                         placement::set_show_joints(show_joints);
+                        ctx.request_repaint();
+                    }
+
+                    let mut show_sensors = placement::show_sensors();
+                    if ui.checkbox(&mut show_sensors, "🏷 Датчики").on_hover_text("Показать сенсорные площадки IMU и оси").changed() {
+                        placement::set_show_sensors(show_sensors);
                         ctx.request_repaint();
                     }
                 });

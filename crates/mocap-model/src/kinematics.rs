@@ -66,12 +66,12 @@ impl KinematicTree {
             SegmentBone { tag: "Head", parent_tag: Some("Neck"), rest_joint: [0.0, 1.61, 0.010] },
 
             // ── 2. Левая рука и пальцы (22) ─────────────────────────────────
-            SegmentBone { tag: "LeftClavicle", parent_tag: Some("SpineT3"), rest_joint: [s_l * 0.035, 1.44, 0.01] },
-            SegmentBone { tag: "LeftShoulder", parent_tag: Some("LeftClavicle"), rest_joint: [s_l * 0.172, 1.395, -0.015] },
+            SegmentBone { tag: "LeftClavicle", parent_tag: Some("SpineT3"), rest_joint: [s_l * 0.038, 1.436, 0.014] },
+            SegmentBone { tag: "LeftShoulder", parent_tag: Some("LeftClavicle"), rest_joint: [s_l * 0.168, 1.408, -0.014] },
             SegmentBone { tag: "LeftUpperArmProx", parent_tag: Some("LeftShoulder"), rest_joint: [s_l * 0.178, 1.390, -0.012] },
-            SegmentBone { tag: "LeftUpperArmDist", parent_tag: Some("LeftUpperArmProx"), rest_joint: [s_l * 0.190, 1.250, -0.012] },
-            SegmentBone { tag: "LeftForearmProx", parent_tag: Some("LeftUpperArmProx"), rest_joint: [s_l * 0.200, 1.108, -0.012] },
-            SegmentBone { tag: "LeftForearmDist", parent_tag: Some("LeftForearmProx"), rest_joint: [s_l * 0.210, 0.980, -0.009] },
+            SegmentBone { tag: "LeftUpperArmDist", parent_tag: Some("LeftUpperArmProx"), rest_joint: [s_l * 0.190, 1.220, -0.012] },
+            SegmentBone { tag: "LeftForearmProx", parent_tag: Some("LeftUpperArmProx"), rest_joint: [s_l * 0.198, 1.108, -0.012] },
+            SegmentBone { tag: "LeftForearmDist", parent_tag: Some("LeftForearmProx"), rest_joint: [s_l * 0.209, 0.980, -0.009] },
             SegmentBone { tag: "LeftHand", parent_tag: Some("LeftForearmProx"), rest_joint: [s_l * 0.216, 0.845, -0.006] },
             // Пальцы левой кисти (I луч)
             SegmentBone { tag: "LeftThumbMeta", parent_tag: Some("LeftHand"), rest_joint: [s_l * 0.211, 0.823, 0.008] },
@@ -95,12 +95,12 @@ impl KinematicTree {
             SegmentBone { tag: "LeftPinkyDist", parent_tag: Some("LeftPinkyMid"), rest_joint: [s_l * 0.210, 0.750, -0.021] },
 
             // ── 3. Правая рука и пальцы (22) ────────────────────────────────
-            SegmentBone { tag: "RightClavicle", parent_tag: Some("SpineT3"), rest_joint: [s_r * 0.035, 1.44, 0.01] },
-            SegmentBone { tag: "RightShoulder", parent_tag: Some("RightClavicle"), rest_joint: [s_r * 0.172, 1.395, -0.015] },
+            SegmentBone { tag: "RightClavicle", parent_tag: Some("SpineT3"), rest_joint: [s_r * 0.038, 1.436, 0.014] },
+            SegmentBone { tag: "RightShoulder", parent_tag: Some("RightClavicle"), rest_joint: [s_r * 0.168, 1.408, -0.014] },
             SegmentBone { tag: "RightUpperArmProx", parent_tag: Some("RightShoulder"), rest_joint: [s_r * 0.178, 1.390, -0.012] },
-            SegmentBone { tag: "RightUpperArmDist", parent_tag: Some("RightUpperArmProx"), rest_joint: [s_r * 0.190, 1.250, -0.012] },
-            SegmentBone { tag: "RightForearmProx", parent_tag: Some("RightUpperArmProx"), rest_joint: [s_r * 0.200, 1.108, -0.012] },
-            SegmentBone { tag: "RightForearmDist", parent_tag: Some("RightForearmProx"), rest_joint: [s_r * 0.210, 0.980, -0.009] },
+            SegmentBone { tag: "RightUpperArmDist", parent_tag: Some("RightUpperArmProx"), rest_joint: [s_r * 0.190, 1.220, -0.012] },
+            SegmentBone { tag: "RightForearmProx", parent_tag: Some("RightUpperArmProx"), rest_joint: [s_r * 0.198, 1.108, -0.012] },
+            SegmentBone { tag: "RightForearmDist", parent_tag: Some("RightForearmProx"), rest_joint: [s_r * 0.209, 0.980, -0.009] },
             SegmentBone { tag: "RightHand", parent_tag: Some("RightForearmProx"), rest_joint: [s_r * 0.216, 0.845, -0.006] },
             // Пальцы правой кисти (I луч)
             SegmentBone { tag: "RightThumbMeta", parent_tag: Some("RightHand"), rest_joint: [s_r * 0.211, 0.823, 0.008] },

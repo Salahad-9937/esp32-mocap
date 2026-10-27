@@ -46,7 +46,7 @@ fn joint_bone_tag(name: &str) -> &'static str {
         n if n.contains("SC") => if n.starts_with("L.") { "LeftClavicle" } else { "RightClavicle" },
         n if n.contains("GH") => if n.starts_with("L.") { "LeftUpperArmProx" } else { "RightUpperArmProx" },
         n if n.contains("Elbow") => if n.starts_with("L.") { "LeftForearmProx" } else { "RightForearmProx" },
-        n if n.contains("Wrist") || n.contains("Radioulnar") => if n.starts_with("L.") { "LeftHand" } else { "RightHand" },
+        n if n.contains("Wrist") => if n.starts_with("L.") { "LeftHand" } else { "RightHand" },
         n if n.contains("MCP") || n.contains("PIP") || n.contains("DIP") || n.contains("CMC") || n.contains("IP") => {
             if n.starts_with("L.") { "LeftHand" } else { "RightHand" }
         }
@@ -72,44 +72,49 @@ pub fn draw_scene_3d(
     let mut line_vertices: Vec<GlVertex> = Vec::with_capacity(1024);
     let mut line_indices: Vec<u32> = Vec::with_capacity(1024);
 
-    for (k, pr) in skel.prims.iter().enumerate() {
-        let bone_tag = skel.prim_bones.get(k).copied().unwrap_or("Sacrum");
-        let tf = transforms.and_then(|t| t.get(bone_tag));
+    let show_mesh = placement::show_mesh();
 
-        match pr {
-            Prim::Capsule { a, b, ra, rb, tone } => {
-                let da = transform_v3(*a, tf);
-                let db = transform_v3(*b, tf);
-                add_capsule_geo(&mut tri_vertices, &mut tri_indices, da, db, *ra, *rb, *tone);
-            }
-            Prim::Sphere { c, r, tone } => {
-                let dc = transform_v3(*c, tf);
-                add_sphere_geo(&mut tri_vertices, &mut tri_indices, dc, *r, *tone);
-            }
-            Prim::Tri { p, tone } => {
-                let p0 = transform_v3(p[0], tf);
-                let p1 = transform_v3(p[1], tf);
-                let p2 = transform_v3(p[2], tf);
-                let edge1 = sub(p1, p0);
-                let edge2 = sub(p2, p0);
-                let normal = norm(cross(edge1, edge2));
-                let color = tone_rgba(*tone);
-                let base = tri_vertices.len() as u32;
-                for &pos in &[p0, p1, p2] {
-                    tri_vertices.push(GlVertex { pos, normal, color, ao: 1.0 });
+    // 1. Отрисовка полигональной геометрии манекена
+    if show_mesh {
+        for (k, pr) in skel.prims.iter().enumerate() {
+            let bone_tag = skel.prim_bones.get(k).copied().unwrap_or("Sacrum");
+            let tf = transforms.and_then(|t| t.get(bone_tag));
+
+            match pr {
+                Prim::Capsule { a, b, ra, rb, tone } => {
+                    let da = transform_v3(*a, tf);
+                    let db = transform_v3(*b, tf);
+                    add_capsule_geo(&mut tri_vertices, &mut tri_indices, da, db, *ra, *rb, *tone);
                 }
-                tri_indices.extend([base, base + 1, base + 2]);
-            }
-            Prim::Mesh { vertices, normals, indices, tone } => {
-                let color = tone_rgba(*tone);
-                let base = tri_vertices.len() as u32;
-                for i in 0..vertices.len() {
-                    let pos = transform_v3(vertices[i], tf);
-                    let normal = transform_norm(normals[i], tf);
-                    tri_vertices.push(GlVertex { pos, normal, color, ao: 1.0 });
+                Prim::Sphere { c, r, tone } => {
+                    let dc = transform_v3(*c, tf);
+                    add_sphere_geo(&mut tri_vertices, &mut tri_indices, dc, *r, *tone);
                 }
-                for &idx in indices {
-                    tri_indices.push(base + idx);
+                Prim::Tri { p, tone } => {
+                    let p0 = transform_v3(p[0], tf);
+                    let p1 = transform_v3(p[1], tf);
+                    let p2 = transform_v3(p[2], tf);
+                    let edge1 = sub(p1, p0);
+                    let edge2 = sub(p2, p0);
+                    let normal = norm(cross(edge1, edge2));
+                    let color = tone_rgba(*tone);
+                    let base = tri_vertices.len() as u32;
+                    for &pos in &[p0, p1, p2] {
+                        tri_vertices.push(GlVertex { pos, normal, color, ao: 1.0 });
+                    }
+                    tri_indices.extend([base, base + 1, base + 2]);
+                }
+                Prim::Mesh { vertices, normals, indices, tone } => {
+                    let color = tone_rgba(*tone);
+                    let base = tri_vertices.len() as u32;
+                    for i in 0..vertices.len() {
+                        let pos = transform_v3(vertices[i], tf);
+                        let normal = transform_norm(normals[i], tf);
+                        tri_vertices.push(GlVertex { pos, normal, color, ao: 1.0 });
+                    }
+                    for &idx in indices {
+                        tri_indices.push(base + idx);
+                    }
                 }
             }
         }
@@ -119,6 +124,7 @@ pub fn draw_scene_3d(
     let highlighted = placement::highlight();
     let selected = placement::selected();
 
+    // 2. Отрисовка сенсорных площадок IMU
     if show_sensors {
         for (st, q) in chips.iter().zip(quats) {
             let tf = transforms.and_then(|t| t.get(st.tag));
@@ -149,8 +155,10 @@ pub fn draw_scene_3d(
         }
     }
 
+    // 3. Координатная сетка пола и габаритная клетка
     add_cage_and_grid_lines(&mut line_vertices, &mut line_indices);
 
+    // 4. Локальные ортогональные базисы ориентации датчиков
     if show_sensors {
         for (st, q) in chips.iter().zip(quats) {
             if let Some(quat) = q {
@@ -201,18 +209,49 @@ pub fn draw_scene_3d(
 
     painter.add(callback);
 
-    // 2D Проекционный оверлей меток суставов поверх 3D сцены
-    if placement::show_joints() {
+    let show_skel_lines = placement::show_skeleton();
+    let show_joint_dots = placement::show_joints();
+
+    // 5. Отрисовка отладочного кинематического скелета (Biped Stick Skeleton)
+    if show_skel_lines {
+        for j in &skel.joints {
+            if let Some(parent_idx) = j.parent {
+                if let Some(parent_j) = skel.joints.get(parent_idx) {
+                    let p_tf = transforms.and_then(|t| t.get(joint_bone_tag(&parent_j.name)));
+                    let c_tf = transforms.and_then(|t| t.get(joint_bone_tag(&j.name)));
+
+                    let p_world = transform_v3(parent_j.pos, p_tf);
+                    let c_world = transform_v3(j.pos, c_tf);
+
+                    if let (Some((p_2d, p_depth)), Some((c_2d, c_depth))) = (
+                        camera.project_depth(p_world, rect),
+                        camera.project_depth(c_world, rect),
+                    ) {
+                        let avg_depth = (p_depth + c_depth) * 0.5;
+                        let line_w = (6.0 / avg_depth).clamp(1.2, 3.2);
+                        let bone_color = Color32::from_rgba_premultiplied(0, 230, 255, 210);
+                        painter.line_segment([p_2d, c_2d], Stroke::new(line_w, bone_color));
+                    }
+                }
+            }
+        }
+    }
+
+    // 6. Отрисовка точечных маркеров сочленений с учетом глубины
+    if show_joint_dots {
         for j in &skel.joints {
             let bone_tag = joint_bone_tag(&j.name);
             let tf = transforms.and_then(|t| t.get(bone_tag));
             let world_pos = transform_v3(j.pos, tf);
 
-            if let Some(screen_pos) = camera.project(world_pos, rect) {
-                // Яркие синие маркеры сочленений с контрастной белой сердцевиной
-                painter.circle_filled(screen_pos, 4.0, Color32::from_rgba_premultiplied(0, 140, 255, 140));
-                painter.circle_filled(screen_pos, 2.2, Color32::from_rgb(0, 195, 255));
-                painter.circle_stroke(screen_pos, 4.5, Stroke::new(1.0_f32, Color32::from_rgb(180, 235, 255)));
+            if let Some((screen_pos, depth)) = camera.project_depth(world_pos, rect) {
+                let dot_r = (11.0 / depth).clamp(2.0, 4.8);
+                let halo_r = dot_r * 1.6;
+                let stroke_w = (3.5 / depth).clamp(0.8, 1.4);
+
+                painter.circle_filled(screen_pos, halo_r, Color32::from_rgba_premultiplied(0, 140, 255, 120));
+                painter.circle_filled(screen_pos, dot_r, Color32::from_rgb(0, 205, 255));
+                painter.circle_stroke(screen_pos, halo_r, Stroke::new(stroke_w, Color32::from_rgb(190, 240, 255)));
             }
         }
     }

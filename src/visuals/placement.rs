@@ -36,8 +36,10 @@ struct State {
     selected: Option<usize>,
     drag: Option<usize>,
     sensitivity: CameraSensitivity,
-    show_sensors: bool,
+    show_mesh: bool,
+    show_skeleton: bool,
     show_joints: bool,
+    show_sensors: bool,
 }
 
 static PENDING_FOCUS: Mutex<Option<(V3, f32)>> = Mutex::new(None);
@@ -62,8 +64,10 @@ fn state() -> &'static Mutex<State> {
             selected: None,
             drag: None,
             sensitivity: CameraSensitivity::default(),
-            show_sensors: true,
+            show_mesh: true,
+            show_skeleton: false,
             show_joints: true,
+            show_sensors: true,
         })
     })
 }
@@ -74,12 +78,21 @@ fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
 }
 
 #[must_use]
-pub fn show_sensors() -> bool {
-    with(|s| s.show_sensors)
+pub fn show_mesh() -> bool {
+    with(|s| s.show_mesh)
 }
 
-pub fn set_show_sensors(show: bool) {
-    with(|s| s.show_sensors = show);
+pub fn set_show_mesh(show: bool) {
+    with(|s| s.show_mesh = show);
+}
+
+#[must_use]
+pub fn show_skeleton() -> bool {
+    with(|s| s.show_skeleton)
+}
+
+pub fn set_show_skeleton(show: bool) {
+    with(|s| s.show_skeleton = show);
 }
 
 #[must_use]
@@ -89,6 +102,15 @@ pub fn show_joints() -> bool {
 
 pub fn set_show_joints(show: bool) {
     with(|s| s.show_joints = show);
+}
+
+#[must_use]
+pub fn show_sensors() -> bool {
+    with(|s| s.show_sensors)
+}
+
+pub fn set_show_sensors(show: bool) {
+    with(|s| s.show_sensors = show);
 }
 
 #[must_use]
