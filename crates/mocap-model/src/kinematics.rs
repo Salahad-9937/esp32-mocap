@@ -73,23 +73,18 @@ impl KinematicTree {
             SegmentBone { tag: "LeftForearmProx", parent_tag: Some("LeftUpperArmProx"), rest_joint: [s_l * 0.198, 1.108, -0.012] },
             SegmentBone { tag: "LeftForearmDist", parent_tag: Some("LeftForearmProx"), rest_joint: [s_l * 0.209, 0.980, -0.009] },
             SegmentBone { tag: "LeftHand", parent_tag: Some("LeftForearmProx"), rest_joint: [s_l * 0.216, 0.845, -0.006] },
-            // Пальцы левой кисти (I луч)
             SegmentBone { tag: "LeftThumbMeta", parent_tag: Some("LeftHand"), rest_joint: [s_l * 0.211, 0.823, 0.008] },
             SegmentBone { tag: "LeftThumbProx", parent_tag: Some("LeftThumbMeta"), rest_joint: [s_l * 0.208, 0.803, 0.015] },
             SegmentBone { tag: "LeftThumbDist", parent_tag: Some("LeftThumbProx"), rest_joint: [s_l * 0.205, 0.782, 0.029] },
-            // Указательный палец (II)
             SegmentBone { tag: "LeftIndexProx", parent_tag: Some("LeftHand"), rest_joint: [s_l * 0.216, 0.782, 0.007] },
             SegmentBone { tag: "LeftIndexMid", parent_tag: Some("LeftIndexProx"), rest_joint: [s_l * 0.213, 0.753, 0.008] },
             SegmentBone { tag: "LeftIndexDist", parent_tag: Some("LeftIndexMid"), rest_joint: [s_l * 0.210, 0.735, 0.009] },
-            // Средний палец (III)
             SegmentBone { tag: "LeftMiddleProx", parent_tag: Some("LeftHand"), rest_joint: [s_l * 0.217, 0.778, -0.002] },
             SegmentBone { tag: "LeftMiddleMid", parent_tag: Some("LeftMiddleProx"), rest_joint: [s_l * 0.214, 0.745, -0.002] },
             SegmentBone { tag: "LeftMiddleDist", parent_tag: Some("LeftMiddleMid"), rest_joint: [s_l * 0.210, 0.724, -0.002] },
-            // Безымянный палец (IV)
             SegmentBone { tag: "LeftRingProx", parent_tag: Some("LeftHand"), rest_joint: [s_l * 0.216, 0.781, -0.011] },
             SegmentBone { tag: "LeftRingMid", parent_tag: Some("LeftRingProx"), rest_joint: [s_l * 0.213, 0.751, -0.012] },
             SegmentBone { tag: "LeftRingDist", parent_tag: Some("LeftRingMid"), rest_joint: [s_l * 0.210, 0.732, -0.013] },
-            // Мизинец (V)
             SegmentBone { tag: "LeftPinkyProx", parent_tag: Some("LeftHand"), rest_joint: [s_l * 0.215, 0.786, -0.019] },
             SegmentBone { tag: "LeftPinkyMid", parent_tag: Some("LeftPinkyProx"), rest_joint: [s_l * 0.213, 0.764, -0.020] },
             SegmentBone { tag: "LeftPinkyDist", parent_tag: Some("LeftPinkyMid"), rest_joint: [s_l * 0.210, 0.750, -0.021] },
@@ -102,23 +97,18 @@ impl KinematicTree {
             SegmentBone { tag: "RightForearmProx", parent_tag: Some("RightUpperArmProx"), rest_joint: [s_r * 0.198, 1.108, -0.012] },
             SegmentBone { tag: "RightForearmDist", parent_tag: Some("RightForearmProx"), rest_joint: [s_r * 0.209, 0.980, -0.009] },
             SegmentBone { tag: "RightHand", parent_tag: Some("RightForearmProx"), rest_joint: [s_r * 0.216, 0.845, -0.006] },
-            // Пальцы правой кисти (I луч)
             SegmentBone { tag: "RightThumbMeta", parent_tag: Some("RightHand"), rest_joint: [s_r * 0.211, 0.823, 0.008] },
             SegmentBone { tag: "RightThumbProx", parent_tag: Some("RightThumbMeta"), rest_joint: [s_r * 0.208, 0.803, 0.015] },
             SegmentBone { tag: "RightThumbDist", parent_tag: Some("RightThumbProx"), rest_joint: [s_r * 0.205, 0.782, 0.029] },
-            // Указательный палец (II)
             SegmentBone { tag: "RightIndexProx", parent_tag: Some("RightHand"), rest_joint: [s_r * 0.216, 0.782, 0.007] },
             SegmentBone { tag: "RightIndexMid", parent_tag: Some("RightIndexProx"), rest_joint: [s_r * 0.213, 0.753, 0.008] },
             SegmentBone { tag: "RightIndexDist", parent_tag: Some("RightIndexMid"), rest_joint: [s_r * 0.210, 0.735, 0.009] },
-            // Средний палец (III)
             SegmentBone { tag: "RightMiddleProx", parent_tag: Some("RightHand"), rest_joint: [s_r * 0.217, 0.778, -0.002] },
             SegmentBone { tag: "RightMiddleMid", parent_tag: Some("RightMiddleProx"), rest_joint: [s_r * 0.214, 0.745, -0.002] },
             SegmentBone { tag: "RightMiddleDist", parent_tag: Some("RightMiddleMid"), rest_joint: [s_r * 0.210, 0.724, -0.002] },
-            // Безымянный палец (IV)
             SegmentBone { tag: "RightRingProx", parent_tag: Some("RightHand"), rest_joint: [s_r * 0.216, 0.781, -0.011] },
             SegmentBone { tag: "RightRingMid", parent_tag: Some("RightRingProx"), rest_joint: [s_r * 0.213, 0.751, -0.012] },
             SegmentBone { tag: "RightRingDist", parent_tag: Some("RightRingMid"), rest_joint: [s_r * 0.210, 0.732, -0.013] },
-            // Мизинец (V)
             SegmentBone { tag: "RightPinkyProx", parent_tag: Some("RightHand"), rest_joint: [s_r * 0.215, 0.786, -0.019] },
             SegmentBone { tag: "RightPinkyMid", parent_tag: Some("RightPinkyProx"), rest_joint: [s_r * 0.213, 0.764, -0.020] },
             SegmentBone { tag: "RightPinkyDist", parent_tag: Some("RightPinkyMid"), rest_joint: [s_r * 0.210, 0.750, -0.021] },
@@ -128,16 +118,20 @@ impl KinematicTree {
             SegmentBone { tag: "LeftThighDist", parent_tag: Some("LeftThighProx"), rest_joint: [s_l * 0.089, 0.700, -0.002] },
             SegmentBone { tag: "LeftShankProx", parent_tag: Some("LeftThighProx"), rest_joint: [s_l * 0.082, 0.495, 0.000] },
             SegmentBone { tag: "LeftShankDist", parent_tag: Some("LeftShankProx"), rest_joint: [s_l * 0.082, 0.280, -0.002] },
-            SegmentBone { tag: "LeftFoot", parent_tag: Some("LeftShankProx"), rest_joint: [s_l * 0.082, 0.070, -0.003] },
-            SegmentBone { tag: "LeftToe", parent_tag: Some("LeftFoot"), rest_joint: [s_l * 0.072, 0.015, 0.090] },
+            // Голеностопный сустав
+            SegmentBone { tag: "LeftFoot", parent_tag: Some("LeftShankProx"), rest_joint: [s_l * 0.082, 0.056, 0.000] },
+            // Сустав MTP1 (скошенная дуга переката по зеленой линии)
+            SegmentBone { tag: "LeftToe", parent_tag: Some("LeftFoot"), rest_joint: [s_l * 0.067, 0.010, 0.114] },
 
             // ── 5. Правая нога (6) ──────────────────────────────────────────
             SegmentBone { tag: "RightThighProx", parent_tag: Some("Sacrum"), rest_joint: [s_r * 0.096, 0.905, -0.005] },
             SegmentBone { tag: "RightThighDist", parent_tag: Some("RightThighProx"), rest_joint: [s_r * 0.089, 0.700, -0.002] },
             SegmentBone { tag: "RightShankProx", parent_tag: Some("RightThighProx"), rest_joint: [s_r * 0.082, 0.495, 0.000] },
             SegmentBone { tag: "RightShankDist", parent_tag: Some("RightShankProx"), rest_joint: [s_r * 0.082, 0.280, -0.002] },
-            SegmentBone { tag: "RightFoot", parent_tag: Some("RightShankProx"), rest_joint: [s_r * 0.082, 0.070, -0.003] },
-            SegmentBone { tag: "RightToe", parent_tag: Some("RightFoot"), rest_joint: [s_r * 0.072, 0.015, 0.090] },
+            // Голеностопный сустав
+            SegmentBone { tag: "RightFoot", parent_tag: Some("RightShankProx"), rest_joint: [s_r * 0.082, 0.056, 0.000] },
+            // Сустав MTP1 (скошенная дуга переката по зеленой линии)
+            SegmentBone { tag: "RightToe", parent_tag: Some("RightFoot"), rest_joint: [s_r * 0.067, 0.010, 0.114] },
         ];
 
         let mut tag_indices = HashMap::new();

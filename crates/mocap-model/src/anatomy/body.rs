@@ -1,27 +1,11 @@
 //! # Анатомические сегменты торса, конечностей и кистей (`body`)
 
-use super::super::math::{add, cross, dot, madd, mirror, norm, scale, sub, V3};
-use super::super::skeleton::{JointKind, Prim, Side, Tone};
+use super::super::math::{madd, mirror, norm, V3};
+use super::super::skeleton::{JointKind, Side, Tone};
 use super::lofting::{loft, Ring};
-use super::{cr, lin, Builder, FRONT, UP, X};
+use super::{cr, Builder, FRONT, UP, X};
 
 pub const WRIST: V3 = [0.216, 0.845, -0.006];
-pub const ZS: f32 = 1.3;
-pub const WS: f32 = 1.35;
-
-pub const FOOT: [(f32, f32, f32, f32, f32); 11] = [
-    (-0.038, 0.003, 0.036, 0.014, 0.013),
-    (-0.028, 0.000, 0.047, 0.018, 0.016),
-    (-0.012, 0.000, 0.060, 0.021, 0.019),
-    (0.005, 0.000, 0.058, 0.022, 0.020),
-    (0.022, 0.000, 0.045, 0.023, 0.021),
-    (0.042, 0.000, 0.034, 0.024, 0.022),
-    (0.065, 0.000, 0.026, 0.027, 0.025),
-    (0.085, 0.000, 0.021, 0.027, 0.024),
-    (0.105, 0.000, 0.016, 0.024, 0.021),
-    (0.120, 0.000, 0.012, 0.019, 0.016),
-    (0.132, 0.001, 0.007, 0.011, 0.009),
-];
 
 fn r(y: f32, cz: f32, rx: f32, rz: f32, ex: f32) -> Ring {
     Ring { c: [0.0, y, cz], rx, rz, ex }
@@ -47,12 +31,6 @@ fn surf_pt(rings: &[Ring], y: f32, front: bool) -> (V3, V3) {
     let dz = z_at(y + 0.01) - z_at(y - 0.01);
     let n = if front { norm([0.0, -dz, 0.02]) } else { norm([0.0, dz, -0.02]) };
     ([0.0, y, z_at(y)], n)
-}
-
-#[must_use]
-pub fn foot_top(z: f32) -> f32 {
-    let zs: Vec<(f32, f32)> = FOOT.iter().map(|st| (st.0 * ZS, st.2)).collect();
-    lin(&zs, z)
 }
 
 pub fn torso(b: &mut Builder) {
@@ -145,7 +123,6 @@ pub fn shoulder_and_arm(b: &mut Builder, side: Side) {
     let upper_arm_tag = if side == Side::Left { "LeftUpperArmProx" } else { "RightUpperArmProx" };
     let forearm_tag = if side == Side::Left { "LeftForearmProx" } else { "RightForearmProx" };
 
-    // 1. Плечевой пояс: Ключица и Акромиальный козырек лопатки
     b.set_bone(clavicle_tag);
     let sc_pt = m([0.038, 1.436, 0.014]);
     let ac_pt = m([0.168, 1.408, -0.014]);
@@ -157,14 +134,11 @@ pub fn shoulder_and_arm(b: &mut Builder, side: Side) {
     b.cap(acromion_hood_a, acromion_hood_b, 0.024, 0.026, Tone::Cortical);
     b.seg_only(format!("{p}Acromion"), acromion_hood_a, acromion_hood_b, vec![(0.0, 0.024), (1.0, 0.026)], UP, FRONT);
 
-    // Плечевой шаровидный сустав (GH)
     let gh = m([0.178, 1.390, -0.012]);
     b.ball(gh, 0.036, Tone::Plate);
 
-    // 2. Плечо (Brachium): дельтовидный окат + трехгранное тело + надмыщелки локтя
     b.set_bone(upper_arm_tag);
     let elbow = m([0.198, 1.108, -0.012]);
-
     let humerus_rings = [
         Ring { c: m([0.198, 1.118, -0.012]), rx: 0.033, rz: 0.023, ex: 2.3 },
         Ring { c: m([0.194, 1.175, -0.012]), rx: 0.031, rz: 0.027, ex: 2.2 },
@@ -174,33 +148,19 @@ pub fn shoulder_and_arm(b: &mut Builder, side: Side) {
     ];
     loft(b, &humerus_rings, Some(0.008), Some(0.016), Tone::Cortical);
 
-    b.seg_only(
-        format!("{p}UpperArm"),
-        gh,
-        elbow,
-        vec![(0.0, 0.040), (0.30, 0.037), (0.72, 0.030), (1.0, 0.026)],
-        FRONT,
-        out,
-    );
+    b.seg_only(format!("{p}UpperArm"), gh, elbow, vec![(0.0, 0.040), (0.30, 0.037), (0.72, 0.030), (1.0, 0.026)], FRONT, out);
 
-    // 3. Анатомический блоковидный узел локтя: поперечный валик (Hinge Spool) + Olecranon
     let ep_med = m([0.181, 1.108, -0.012]);
     let ep_lat = m([0.215, 1.108, -0.012]);
     b.cap(ep_med, ep_lat, 0.015, 0.013, Tone::Plate);
 
-    // Локтевой отросток сзади (Olecranon) — костное ребро локтя
     let olecranon_a = m([0.198, 1.118, -0.018]);
     let olecranon_b = m([0.198, 1.096, -0.023]);
     b.cap(olecranon_a, olecranon_b, 0.012, 0.010, Tone::Plate);
+    b.ball(m([0.177, 1.108, -0.012]), 0.0065, Tone::Plate);
 
-    // Медиальный мыщелковый выступ внутрь
-    let epicondyle_med_bump = m([0.177, 1.108, -0.012]);
-    b.ball(epicondyle_med_bump, 0.0065, Tone::Plate);
-
-    // 4. Предплечье (Antebrachium): латеральный валик плечелучевой мышцы + стройный конический сход
     b.set_bone(forearm_tag);
     let wrist = m([0.216, 0.858, -0.006]);
-
     let forearm_rings = [
         Ring { c: m([0.216, 0.855, -0.006]), rx: 0.0115, rz: 0.0110, ex: 2.1 },
         Ring { c: m([0.215, 0.875, -0.006]), rx: 0.0145, rz: 0.0125, ex: 2.2 },
@@ -215,11 +175,9 @@ pub fn shoulder_and_arm(b: &mut Builder, side: Side) {
     b.seg_only(format!("{p}Ulna"), elbow, wrist, fprof.clone(), FRONT, out);
     b.seg_only(format!("{p}Radius"), elbow, wrist, fprof, FRONT, out);
 
-    // 5. Лучезапястный шарнир: компактный эстетичный шаровой шарнир манекена
     let wrist_joint = m(WRIST);
     b.ball(wrist_joint, 0.0105, Tone::Plate);
 
-    // Кинематические сочленения: прямая кинематическая цепь руки SC -> GH -> Elbow -> Wrist
     b.joint(&format!("{p}SC"), JointKind::Saddle, m([0.038, 1.436, 0.014]), Some("C7T1"), 0.005, None);
     b.joint(&format!("{p}GH"), JointKind::Ball, gh, Some(&format!("{p}SC")), 0.008, None);
     b.joint(&format!("{p}Elbow"), JointKind::Hinge, elbow, Some(&format!("{p}GH")), 0.006, Some(X));
@@ -232,13 +190,11 @@ pub fn hand(b: &mut Builder, side: Side) {
     let out = [s, 0.0, 0.0];
     let wrist_name = format!("{p}Wrist");
     let wrist_pos = mirror(s, WRIST);
-    // Лучезапястный сустав соединяется напрямую с локтем (Elbow), формируя жесткое звено предплечья
     b.joint(&wrist_name, JointKind::Condyloid, wrist_pos, Some(&format!("{p}Elbow")), 0.005, None);
 
     let hand_tag = if side == Side::Left { "LeftHand" } else { "RightHand" };
     b.set_bone(hand_tag);
 
-    // 1. Центральное тело пясти: плавное расширение от шарнира запястья к костяшкам
     let palm_rings = [
         Ring { c: rel(0.000, -0.062, 0.000), rx: 0.0075, rz: 0.0185, ex: 2.2 },
         Ring { c: rel(0.000, -0.054, 0.000), rx: 0.0090, rz: 0.0195, ex: 2.3 },
@@ -248,7 +204,6 @@ pub fn hand(b: &mut Builder, side: Side) {
     ];
     loft(b, &palm_rings, Some(0.003), Some(0.003), Tone::Cortical);
 
-    // 2. Тенар (каплевидный мышечный корень большого пальца)
     let thenar_a = rel(-0.003, -0.012, 0.006);
     let thenar_b = rel(-0.007, -0.038, 0.017);
     b.cap(thenar_a, thenar_b, 0.0085, 0.0070, Tone::Cortical);
@@ -257,23 +212,20 @@ pub fn hand(b: &mut Builder, side: Side) {
     let thenar_fill_b = rel(-0.006, -0.040, 0.012);
     b.cap(thenar_fill_a, thenar_fill_b, 0.0075, 0.0065, Tone::Cortical);
 
-    // 3. Гипотенар (ульнарный валик ладони со стороны мизинца)
     let hypo_a = rel(-0.003, -0.014, -0.008);
     let hypo_b = rel(-0.003, -0.048, -0.013);
     b.cap(hypo_a, hypo_b, 0.0070, 0.0060, Tone::Cortical);
 
-    // Опорная площадка для IMU-датчика тыла кисти (MC3)
     let mc3_a = rel(0.0075, -0.016, 0.002);
     let mc3_b = rel(0.0065, -0.052, 0.003);
     b.seg_only(format!("{p}MC3"), mc3_a, mc3_b, vec![(0.0, 0.004), (1.0, 0.004)], out, FRONT);
 
-    // 4. Пальцы II–V (MCP, фаланги и сочленения)
     let names = ["Index", "Middle", "Ring", "Pinky"];
     let mcp_coords = [
-        rel(0.000, -0.063, 0.013),   // Index (II)
-        rel(0.001, -0.067, 0.004),   // Middle (III, пик арки)
-        rel(0.000, -0.064, -0.005),  // Ring (IV)
-        rel(-0.001, -0.059, -0.013), // Pinky (V, проксимальный сдвиг)
+        rel(0.000, -0.063, 0.013),
+        rel(0.001, -0.067, 0.004),
+        rel(0.000, -0.064, -0.005),
+        rel(-0.001, -0.059, -0.013),
     ];
     let knuckle_r = [0.0045, 0.0048, 0.0045, 0.0038];
     let lens = [
@@ -326,14 +278,12 @@ pub fn hand(b: &mut Builder, side: Side) {
         }
     }
 
-    // 5. Большой палец (I луч: опора в тенаре, оппозиция и суставы CMC1 / MCP1 / IP1)
     let cmc = rel(-0.005, -0.022, 0.014);
     let mcp1 = rel(-0.008, -0.042, 0.021);
     let dir_pp1 = norm([-s * 0.10, -0.82, 0.56]);
     let ip1 = madd(mcp1, dir_pp1, 0.025);
     let dir_dp1 = norm([-s * 0.12, -0.80, 0.59]);
     let tip1 = madd(ip1, dir_dp1, 0.018);
-
     let n0_thumb = norm([s * 0.70, 0.0, 0.70]);
 
     b.set_bone(if side == Side::Left { "LeftThumbMeta" } else { "RightThumbMeta" });
@@ -352,70 +302,6 @@ pub fn hand(b: &mut Builder, side: Side) {
     b.joint(&format!("{p}IP1"), JointKind::Hinge, ip1, Some(&format!("{p}MCP1")), 0.002, Some(FRONT));
 }
 
-pub fn foot_mesh(x_leg: f32, s: f32) -> (Vec<V3>, Vec<V3>, Vec<u32>) {
-    const PTS: usize = 16;
-    let mut v: Vec<V3> = vec![[x_leg, 0.018, -0.046 * ZS]];
-    for &(z, y_bot, y_top, wl, wm) in &FOOT {
-        let (z, wl, wm) = (z * ZS, wl * WS, wm * WS);
-        let h = (y_top - y_bot).max(0.004);
-        let rf = 0.004_f32.min(h * 0.25);
-        for k in 0..PTS {
-            let (dx, y) = match k {
-                0 => (0.0, y_bot),
-                1 => (wl - rf, y_bot),
-                2 => (wl, y_bot + rf),
-                3 => (wl, y_bot + h * 0.35),
-                4 => (wl * 0.96, y_bot + h * 0.68),
-                5 => (wl * 0.72, y_top - rf * 0.6),
-                6 => (wl * 0.36, y_top),
-                7 => (0.0, y_top),
-                8 => (-wm * 0.36, y_top),
-                9 => (-wm * 0.72, y_top - rf * 0.6),
-                10 => (-wm * 0.96, y_bot + h * 0.68),
-                11 => (-wm, y_bot + h * 0.35),
-                12 => (-wm, y_bot + rf),
-                13 => (-wm + rf, y_bot),
-                14 => (-wm * 0.50, y_bot),
-                _ => (wl * 0.50, y_bot),
-            };
-            v.push([x_leg + dx * s, y, z]);
-        }
-    }
-    let front = v.len() as u32;
-    v.push([x_leg, 0.004, 0.140 * ZS]);
-
-    let mut idx: Vec<u32> = Vec::new();
-    for k in 0..PTS {
-        idx.extend([0, 1 + k as u32, 1 + ((k + 1) % PTS) as u32]);
-    }
-    for ring in 0..FOOT.len() - 1 {
-        let r0 = 1 + (ring * PTS) as u32;
-        let r1 = 1 + ((ring + 1) * PTS) as u32;
-        for k in 0..PTS {
-            let nk = ((k + 1) % PTS) as u32;
-            let k = k as u32;
-            idx.extend([r0 + k, r1 + k, r0 + nk, r0 + nk, r1 + k, r1 + nk]);
-        }
-    }
-    let lr = 1 + ((FOOT.len() - 1) * PTS) as u32;
-    for k in 0..PTS {
-        idx.extend([front, lr + ((k + 1) % PTS) as u32, lr + k as u32]);
-    }
-
-    let (zmin, zmax) = (-0.036 * ZS, 0.132 * ZS);
-    for t in idx.chunks_exact_mut(3) {
-        let (a, bb, c) = (v[t[0] as usize], v[t[1] as usize], v[t[2] as usize]);
-        let gn = cross(sub(bb, a), sub(c, a));
-        let tc = scale(add(add(a, bb), c), 1.0 / 3.0);
-        let axis_pt = [x_leg, 0.5 * foot_top(tc[2]), tc[2].clamp(zmin, zmax)];
-        if dot(gn, sub(tc, axis_pt)) < 0.0 {
-            t.swap(1, 2);
-        }
-    }
-    let n = super::lofting::mesh_normals(&v, &idx);
-    (v, n, idx)
-}
-
 pub fn leg(b: &mut Builder, side: Side) {
     let s = side.sign();
     let p = side.prefix();
@@ -424,8 +310,8 @@ pub fn leg(b: &mut Builder, side: Side) {
 
     let thigh_tag = if side == Side::Left { "LeftThighProx" } else { "RightThighProx" };
     let shank_tag = if side == Side::Left { "LeftShankProx" } else { "RightShankProx" };
-    let foot_tag = if side == Side::Left { "LeftFoot" } else { "RightFoot" };
 
+    // 1. Бедро (Femur)
     b.set_bone(thigh_tag);
     let hip = m([0.096, 0.905, -0.005]);
     let knee = m([0.082, 0.495, 0.000]);
@@ -443,51 +329,34 @@ pub fn leg(b: &mut Builder, side: Side) {
     );
     b.ball(knee, 0.040, Tone::Plate);
 
+    // 2. Голень (Tibia) с анатомической лодыжечной вилкой
     b.set_bone(shank_tag);
     super::lofting::limb(
         b,
         Some(format!("{p}Tibia")),
         m([0.082, 0.480, 0.000]),
-        m([0.082, 0.086, -0.004]),
-        &[(0.0, 0.037), (0.2, 0.040), (0.55, 0.031), (1.0, 0.021)],
+        m([0.082, 0.068, -0.002]),
+        &[(0.0, 0.037), (0.20, 0.040), (0.55, 0.031), (0.85, 0.021), (1.0, 0.023)],
         1.0,
         FRONT,
         out,
         false,
         false,
     );
-    let ankle = m([0.082, 0.070, -0.003]);
-    b.ball(ankle, 0.024, Tone::Plate);
 
-    b.set_bone(foot_tag);
-    let (fv, fnm, fi) = foot_mesh(0.082 * s, s);
-    b.prims.push(Prim::Mesh { vertices: fv, normals: fnm, indices: fi, tone: Tone::Cortical });
-    b.prim_bones.push(b.current_bone);
+    // Анатомическая лодыжечная вилка (malleolar mortise), охватывающая таранный шарнир
+    let malleolus_med_top = m([0.074, 0.080, 0.000]);
+    let malleolus_med_bot = m([0.070, 0.056, 0.002]);
+    b.cap(malleolus_med_top, malleolus_med_bot, 0.012, 0.007, Tone::Cortical);
 
-    let (z1, z2) = (0.030 * ZS, 0.060 * ZS);
-    b.seg_only(
-        format!("{p}MT3"),
-        m([0.082, 0.0, z1]),
-        m([0.082, 0.0, z2]),
-        vec![(0.0, foot_top(z1)), (1.0, foot_top(z2))],
-        UP,
-        out,
-    );
-    let (h1, h2) = (0.095 * ZS, 0.118 * ZS);
-    let hx = 0.082 - 0.010 * WS;
-    b.seg_only(
-        format!("{p}HalluxPP"),
-        m([hx, 0.0, h1]),
-        m([hx, 0.0, h2]),
-        vec![(0.0, foot_top(h1)), (1.0, foot_top(h2))],
-        UP,
-        out,
-    );
+    let malleolus_lat_top = m([0.090, 0.080, -0.002]);
+    let malleolus_lat_bot = m([0.094, 0.050, -0.004]);
+    b.cap(malleolus_lat_top, malleolus_lat_bot, 0.011, 0.0065, Tone::Cortical);
+
+    // 3. Анатомическая стопа и 5 дифференцированных пальцев
+    super::foot::build_foot(b, side);
 
     let jr = 0.005;
     b.joint(&format!("{p}Hip"), JointKind::Ball, hip, Some("Pelvis"), jr, None);
     b.joint(&format!("{p}Knee"), JointKind::Hinge, knee, Some(&format!("{p}Hip")), jr, Some(X));
-    b.joint(&format!("{p}Ankle"), JointKind::Hinge, ankle, Some(&format!("{p}Knee")), 0.0045, Some(X));
-    b.joint(&format!("{p}Subtalar"), JointKind::Gliding, m([0.082, 0.032, -0.010]), Some(&format!("{p}Ankle")), 0.0035, None);
-    b.joint(&format!("{p}MTP1"), JointKind::Condyloid, m([hx, 0.015, 0.090 * ZS]), Some(&format!("{p}Subtalar")), 0.003, None);
 }

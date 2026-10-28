@@ -1,6 +1,7 @@
 //! # Процедурный генератор анатомической геометрии манекена (`anatomy`)
 
 pub mod body;
+pub mod foot;
 pub mod lofting;
 
 use super::math::{dot, lerp, madd, norm, scale, sub, V3};
@@ -87,19 +88,6 @@ pub fn prof_r(prof: &[(f32, f32)], t: f32) -> f32 {
         }
     }
     prof[prof.len() - 1].1
-}
-
-#[must_use]
-pub fn lin(p: &[(f32, f32)], t: f32) -> f32 {
-    if t <= p[0].0 {
-        return p[0].1;
-    }
-    for w in p.windows(2) {
-        if t <= w[1].0 {
-            return w[1].1 + (w[1].1 - w[0].1) * (t - w[0].0) / (w[1].0 - w[0].0).max(1e-6);
-        }
-    }
-    p[p.len() - 1].1
 }
 
 fn resolve(b: &Builder, id: usize, def: &SensorDef) -> SensorSite {
