@@ -217,6 +217,7 @@ pub struct SensorSite {
     pub chip: Chip,
 }
 
+#[derive(Debug, Clone)]
 pub struct Skeleton {
     pub joints: Vec<Joint>,
     pub prims: Vec<Prim>,

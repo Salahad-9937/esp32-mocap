@@ -37,23 +37,39 @@ fn transform_norm(n: V3, tf: Option<&BoneTransform>) -> V3 {
 fn joint_bone_tag(name: &str) -> &'static str {
     match name {
         n if n.contains("Pelvis") || n.contains("L5S1") => "Sacrum",
-        n if n.contains("L3L4") => "SpineL3",
-        n if n.contains("T12L1") => "SpineT11",
-        n if n.contains("T7T8") => "SpineT7",
-        n if n.contains("C7T1") => "SpineT3",
-        n if n.contains("C4C5") => "Neck",
-        n if n.contains("Occiput") || n.contains("C1C2") => "Head",
-        n if n.contains("SC") => if n.starts_with("L.") { "LeftClavicle" } else { "RightClavicle" },
-        n if n.contains("GH") => if n.starts_with("L.") { "LeftUpperArmProx" } else { "RightUpperArmProx" },
-        n if n.contains("Elbow") => if n.starts_with("L.") { "LeftForearmProx" } else { "RightForearmProx" },
-        n if n.contains("Wrist") => if n.starts_with("L.") { "LeftHand" } else { "RightHand" },
-        n if n.contains("MCP") || n.contains("PIP") || n.contains("DIP") || n.contains("CMC") || n.contains("IP") => {
-            if n.starts_with("L.") { "LeftHand" } else { "RightHand" }
+        n if n.contains("L3L4") || n.contains("SpineL3") => "SpineL3",
+        n if n.contains("T12L1") || n.contains("SpineT11") => "SpineT11",
+        n if n.contains("T7T8") || n.contains("SpineT7") => "SpineT7",
+        n if n.contains("C7T1") || n.contains("SpineT3") => "SpineT3",
+        n if n.contains("C4C5") || n.contains("Neck") => "Neck",
+        n if n.contains("Occiput") || n.contains("C1C2") || n.contains("Head") => "Head",
+        n if n.contains("SC") || n.contains("Clavicle") => {
+            if n.starts_with("L.") || n.contains("Left") { "LeftClavicle" } else { "RightClavicle" }
         }
-        n if n.contains("Hip") => if n.starts_with("L.") { "LeftThighProx" } else { "RightThighProx" },
-        n if n.contains("Knee") => if n.starts_with("L.") { "LeftShankProx" } else { "RightShankProx" },
-        n if n.contains("Ankle") || n.contains("Subtalar") => if n.starts_with("L.") { "LeftFoot" } else { "RightFoot" },
-        n if n.contains("MTP") => if n.starts_with("L.") { "LeftToe" } else { "RightToe" },
+        n if n.contains("GH") || n.contains("Shoulder") => {
+            if n.starts_with("L.") || n.contains("Left") { "LeftShoulder" } else { "RightShoulder" }
+        }
+        n if n.contains("Elbow") => {
+            if n.starts_with("L.") || n.contains("Left") { "LeftForearmProx" } else { "RightForearmProx" }
+        }
+        n if n.contains("Wrist") => {
+            if n.starts_with("L.") || n.contains("Left") { "LeftHand" } else { "RightHand" }
+        }
+        n if n.contains("MCP") || n.contains("PIP") || n.contains("DIP") || n.contains("CMC") || n.contains("IP") => {
+            if n.starts_with("L.") || n.contains("Left") { "LeftHand" } else { "RightHand" }
+        }
+        n if n.contains("Hip") => {
+            if n.starts_with("L.") || n.contains("Left") { "LeftThighProx" } else { "RightThighProx" }
+        }
+        n if n.contains("Knee") => {
+            if n.starts_with("L.") || n.contains("Left") { "LeftShankProx" } else { "RightShankProx" }
+        }
+        n if n.contains("Ankle") || n.contains("Subtalar") => {
+            if n.starts_with("L.") || n.contains("Left") { "LeftFoot" } else { "RightFoot" }
+        }
+        n if n.contains("MTP") || n.contains("Toe") => {
+            if n.starts_with("L.") || n.contains("Left") { "LeftToe" } else { "RightToe" }
+        }
         _ => "Sacrum",
     }
 }

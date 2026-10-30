@@ -7,7 +7,8 @@ use mocap_model::skeleton::Tone;
 #[must_use]
 pub fn tone_rgba(t: Tone) -> [f32; 4] {
     match t {
-        Tone::Cortical | Tone::Plate | Tone::Trabecular => [0.72, 0.74, 0.78, 1.0],
+        Tone::Cortical | Tone::Trabecular => [0.74, 0.76, 0.80, 1.0],
+        Tone::Plate => [0.30, 0.33, 0.40, 1.0], // Контрастный графитовый цвет шарниров суставов
         Tone::Cartilage => [0.55, 0.62, 0.72, 1.0],
         Tone::Tooth => [0.92, 0.92, 0.90, 1.0],
         Tone::Dark => [0.18, 0.21, 0.28, 1.0],

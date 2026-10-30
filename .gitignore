@@ -25,6 +25,7 @@ logs/
 .pio/
 firmware/build/
 *.bin
+!crates/mocap-model/assets/*.bin
 *.elf
 *.hex
 

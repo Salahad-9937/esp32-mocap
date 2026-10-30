@@ -12,3 +12,7 @@ ctx:
 # Compile MoCap boundaries specification PDF via Pandoc
 doc:
 	bash scripts/build_doc.sh
+
+# Export mannequin 3D mesh from Blender to binary engine container
+export-mesh:
+	blender -b assets/mannequin.blend -P tools/export_mannequin.py
