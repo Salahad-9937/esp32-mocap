@@ -4,7 +4,7 @@ use crate::config::AppConfig;
 use crate::ingestion::spawn_background_ingestion;
 use crate::state::{ConnectionStatus, SharedStateHandle, SharedTelemetryState};
 use crate::views::{CalibrationView, MapperView, TopologyView, TrackingView};
-use crate::visuals::{render_3d_scene, OrbitalCamera};
+use crate::visuals::{placement, render_3d_scene, OrbitalCamera};
 use egui::{Color32, Frame, Margin, RichText, Stroke, TextWrapMode, Visuals};
 use mocap_core::mapping::MappingProfile;
 use std::path::PathBuf;
@@ -123,6 +123,11 @@ impl MocapApp {
 
 impl eframe::App for MocapApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let dt = ctx.input(|i| i.stable_dt).min(0.05);
+        if placement::update_pose_animation(dt) {
+            ctx.request_repaint();
+        }
+
         let bg_color = Color32::from_rgb(16, 20, 28);
         ctx.set_visuals(Visuals {
             dark_mode: true,

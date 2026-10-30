@@ -1,7 +1,7 @@
 //! # Адаптер размещения меток и состояния навигации (`placement`)
 
 use mocap_model::math::V3;
-pub use mocap_model::placement::PlacedChip;
+pub use mocap_model::placement::{MannequinPose, PlacedChip};
 use mocap_model::placement::SensorLayoutManager;
 use mocap_model::skeleton::skeleton;
 use std::sync::{Mutex, OnceLock};
@@ -78,68 +78,42 @@ fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
 }
 
 #[must_use]
-pub fn show_mesh() -> bool {
-    with(|s| s.show_mesh)
-}
-
-pub fn set_show_mesh(show: bool) {
-    with(|s| s.show_mesh = show);
-}
+pub fn show_mesh() -> bool { with(|s| s.show_mesh) }
+pub fn set_show_mesh(show: bool) { with(|s| s.show_mesh = show); }
 
 #[must_use]
-pub fn show_skeleton() -> bool {
-    with(|s| s.show_skeleton)
-}
-
-pub fn set_show_skeleton(show: bool) {
-    with(|s| s.show_skeleton = show);
-}
+pub fn show_skeleton() -> bool { with(|s| s.show_skeleton) }
+pub fn set_show_skeleton(show: bool) { with(|s| s.show_skeleton = show); }
 
 #[must_use]
-pub fn show_joints() -> bool {
-    with(|s| s.show_joints)
-}
-
-pub fn set_show_joints(show: bool) {
-    with(|s| s.show_joints = show);
-}
+pub fn show_joints() -> bool { with(|s| s.show_joints) }
+pub fn set_show_joints(show: bool) { with(|s| s.show_joints = show); }
 
 #[must_use]
-pub fn show_sensors() -> bool {
-    with(|s| s.show_sensors)
-}
-
-pub fn set_show_sensors(show: bool) {
-    with(|s| s.show_sensors = show);
-}
+pub fn show_sensors() -> bool { with(|s| s.show_sensors) }
+pub fn set_show_sensors(show: bool) { with(|s| s.show_sensors = show); }
 
 #[must_use]
-pub fn get_sensitivity() -> CameraSensitivity {
-    with(|s| s.sensitivity)
-}
-
-pub fn set_sensitivity(sens: CameraSensitivity) {
-    with(|s| s.sensitivity = sens);
-}
+pub fn target_pose() -> MannequinPose { with(|s| s.layout.target_pose()) }
+pub fn set_target_pose(pose: MannequinPose) { with(|s| s.layout.set_target_pose(pose)); }
 
 #[must_use]
-pub fn chips() -> Vec<PlacedChip> {
-    with(|s| s.layout.chips().to_vec())
-}
+pub fn pose_blend() -> f32 { with(|s| s.layout.pose_blend()) }
+pub fn update_pose_animation(dt: f32) -> bool { with(|s| s.layout.update_pose_animation(dt)) }
 
 #[must_use]
-pub fn highlight() -> Option<usize> {
-    with(|s| s.drag.or(s.hover))
-}
+pub fn get_sensitivity() -> CameraSensitivity { with(|s| s.sensitivity) }
+pub fn set_sensitivity(sens: CameraSensitivity) { with(|s| s.sensitivity = sens); }
 
 #[must_use]
-pub fn selected() -> Option<usize> {
-    with(|s| s.selected)
-}
+pub fn chips() -> Vec<PlacedChip> { with(|s| s.layout.chips().to_vec()) }
 
-pub fn set_selected(sel: Option<usize>) {
-    with(|s| s.selected = sel);
-}
+#[must_use]
+pub fn highlight() -> Option<usize> { with(|s| s.drag.or(s.hover)) }
+
+#[must_use]
+pub fn selected() -> Option<usize> { with(|s| s.selected) }
+pub fn set_selected(sel: Option<usize>) { with(|s| s.selected = sel); }
 
 pub fn select_by_tag(tag: &str) {
     let id = skeleton().sites.iter().position(|s| s.tag == tag);
@@ -152,9 +126,7 @@ pub fn selected_tag() -> Option<&'static str> {
 }
 
 #[must_use]
-pub fn dragging() -> Option<usize> {
-    with(|s| s.drag)
-}
+pub fn dragging() -> Option<usize> { with(|s| s.drag) }
 
 pub fn set_hover(h: Option<usize>) -> bool {
     with(|s| {
@@ -165,36 +137,17 @@ pub fn set_hover(h: Option<usize>) -> bool {
 }
 
 #[must_use]
-pub fn tag(id: usize) -> &'static str {
-    skeleton().sites.get(id).map_or("", |s| s.tag)
-}
+pub fn tag(id: usize) -> &'static str { skeleton().sites.get(id).map_or("", |s| s.tag) }
 
 #[must_use]
-pub fn pick(p: V3) -> Option<usize> {
-    with(|s| s.layout.pick(p))
-}
+pub fn pick(p: V3) -> Option<usize> { with(|s| s.layout.pick(p)) }
 
-pub fn begin_drag(id: usize) {
-    with(|s| s.drag = Some(id));
-}
+pub fn begin_drag(id: usize) { with(|s| s.drag = Some(id)); }
+pub fn end_drag() { with(|s| s.drag = None); }
 
-pub fn end_drag() {
-    with(|s| s.drag = None);
-}
-
-pub fn move_chip(id: usize, pos: V3, normal: V3) {
-    with(|s| s.layout.move_chip(id, pos, normal));
-}
-
-pub fn reset_one(id: usize) {
-    with(|s| s.layout.reset_one(id));
-}
-
-pub fn reset_all() {
-    with(|s| s.layout.reset_all());
-}
+pub fn move_chip(id: usize, pos: V3, normal: V3) { with(|s| s.layout.move_chip(id, pos, normal)); }
+pub fn reset_one(id: usize) { with(|s| s.layout.reset_one(id)); }
+pub fn reset_all() { with(|s| s.layout.reset_all()); }
 
 #[must_use]
-pub fn custom_count() -> usize {
-    with(|s| s.layout.custom_count())
-}
+pub fn custom_count() -> usize { with(|s| s.layout.custom_count()) }

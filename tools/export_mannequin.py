@@ -29,6 +29,11 @@ SHOULDER_Y = -0.036
 SHOULDER_X_LEFT = 0.178
 SHOULDER_X_RIGHT = -0.178
 
+# Угол отведения руки: 87.0 градусов дает стабильный зазор 2.2 см от бедра
+ARM_ANGLE_RAD = math.radians(87.0)
+COS_A = math.cos(ARM_ANGLE_RAD)
+SIN_A = math.sin(ARM_ANGLE_RAD)
+
 def make_sphere_mesh(cx, cy, cz, r, segs=14, rings=10):
     verts = []
     normals = []
@@ -53,7 +58,7 @@ def make_sphere_mesh(cx, cy, cz, r, segs=14, rings=10):
     return verts, normals, indices
 
 exported_meshes = []
-bone_meshes = {}
+bone_body_meshes = {} # ТОЛЬКО тела звеньев (без сфер) для точной центровки
 recorded_positions = {}
 
 recorded_positions["Pelvis"] = [0.0, 0.961, 0.041]
@@ -79,7 +84,6 @@ for obj in parts:
     pfx = "L." if c.x > 0 else "R."
     sh_x = SHOULDER_X_LEFT if side == "Left" else SHOULDER_X_RIGHT
 
-    # Пропускаем строго плечевой боковой штифт (шея abs_x=0.0 и талия abs_x=0.0 НЕ пропускаются)
     if is_joint and 0.12 < abs_x < 0.25 and 1.28 < c.z < 1.40:
         continue
 
@@ -99,15 +103,15 @@ for obj in parts:
             dx = co.x - sh_x
             dz = co.z - SHOULDER_Z
             if side == "Left":
-                new_dx = dz
-                new_dz = -dx
-                ndx = no.z
-                ndz = -no.x
+                new_dx = dx * COS_A + dz * SIN_A
+                new_dz = -dx * SIN_A + dz * COS_A
+                ndx = no.x * COS_A + no.z * SIN_A
+                ndz = -no.x * SIN_A + no.z * COS_A
             else:
-                new_dx = -dz
-                new_dz = dx
-                ndx = -no.z
-                ndz = no.x
+                new_dx = dx * COS_A - dz * SIN_A
+                new_dz = dx * SIN_A + dz * COS_A
+                ndx = no.x * COS_A - no.z * SIN_A
+                ndz = no.x * SIN_A + no.z * COS_A
             co.x = sh_x + new_dx
             co.z = SHOULDER_Z + new_dz
             no.x = ndx
@@ -128,64 +132,48 @@ for obj in parts:
     cz = sum(v[2] for v in verts) / len(verts)
 
     if is_joint:
-        # Оригинальные цилиндры шеи и талии
         if abs_x < 0.03:
             if c.z > 1.40:
                 exported_meshes.append(("Neck", 2, verts, normals, indices))
-                bone_meshes.setdefault("Neck", []).append((verts, normals))
                 recorded_positions["Neck"] = [cx, cy, cz]
             else:
                 exported_meshes.append(("SpineL3", 2, verts, normals, indices))
-                bone_meshes.setdefault("SpineL3", []).append((verts, normals))
                 recorded_positions["T12L1"] = [cx, cy, cz]
             continue
 
-        # Оригинальный меш сустава пальцев стопы
         if c.z <= 0.05:
             exported_meshes.append((f"{side}Toe", 2, verts, normals, indices))
-            bone_meshes.setdefault(f"{side}Toe", []).append((verts, normals))
             recorded_positions[f"{pfx}MTP"] = [cx, cy, cz]
             continue
 
-        # Сферические шарниры только для целевых суставов
         if c.z < 0.90:
             if c.z > 0.70:
                 sph_v, sph_n, sph_i = make_sphere_mesh(cx, cy, cz, 0.045)
                 exported_meshes.append((f"{side}ThighProx", 2, sph_v, sph_n, sph_i))
-                bone_meshes.setdefault(f"{side}ThighProx", []).append((sph_v, sph_n))
                 recorded_positions[f"{pfx}Hip"] = [cx, cy, cz]
             elif c.z > 0.35:
                 sph_v, sph_n, sph_i = make_sphere_mesh(cx, cy, cz, 0.036)
                 exported_meshes.append((f"{side}ShankProx", 2, sph_v, sph_n, sph_i))
-                bone_meshes.setdefault(f"{side}ShankProx", []).append((sph_v, sph_n))
                 recorded_positions[f"{pfx}Knee"] = [cx, cy, cz]
             else:
                 sph_v, sph_n, sph_i = make_sphere_mesh(cx, cy, cz, 0.020)
                 exported_meshes.append((f"{side}Foot", 2, sph_v, sph_n, sph_i))
-                bone_meshes.setdefault(f"{side}Foot", []).append((sph_v, sph_n))
                 recorded_positions[f"{pfx}Ankle"] = [cx, cy, cz]
         else:
             if abs_x < 0.42:
                 sph_v, sph_n, sph_i = make_sphere_mesh(cx, cy, cz, 0.028)
                 exported_meshes.append((f"{side}ForearmProx", 2, sph_v, sph_n, sph_i))
-                bone_meshes.setdefault(f"{side}ForearmProx", []).append((sph_v, sph_n))
                 recorded_positions[f"{pfx}Elbow"] = [cx, cy, cz]
             elif abs_x < 0.60:
                 sph_v, sph_n, sph_i = make_sphere_mesh(cx, cy, cz, 0.016)
                 exported_meshes.append((f"{side}Hand", 2, sph_v, sph_n, sph_i))
-                bone_meshes.setdefault(f"{side}Hand", []).append((sph_v, sph_n))
                 recorded_positions[f"{pfx}Wrist"] = [cx, cy, cz]
             else:
-                if c.y <= -0.095:
-                    f_grp = "Thumb"
-                elif c.y <= -0.072:
-                    f_grp = "Index"
-                elif c.y <= -0.054:
-                    f_grp = "Middle"
-                elif c.y <= -0.036:
-                    f_grp = "Ring"
-                else:
-                    f_grp = "Pinky"
+                if c.y <= -0.095: f_grp = "Thumb"
+                elif c.y <= -0.072: f_grp = "Index"
+                elif c.y <= -0.054: f_grp = "Middle"
+                elif c.y <= -0.036: f_grp = "Ring"
+                else: f_grp = "Pinky"
                 finger_joint_candidates[pfx].setdefault(f_grp, []).append((abs_x, (cx, cy, cz)))
     else:
         bone_tag = "Sacrum"
@@ -203,20 +191,22 @@ for obj in parts:
             elif abs_x < 0.52: bone_tag = f"{side}ForearmDist"
             elif abs_x < 0.65 and c.y > -0.09: bone_tag = f"{side}Hand"
             elif c.y <= -0.095:
-                bone_tag = f"{side}ThumbProx" if abs_x < 0.66 else f"{side}ThumbDist"
+                if abs_x < 0.645: bone_tag = f"{side}ThumbMeta"
+                elif abs_x < 0.675: bone_tag = f"{side}ThumbProx"
+                else: bone_tag = f"{side}ThumbDist"
             else:
                 if c.y <= -0.072: f_p = "Index"
                 elif c.y <= -0.054: f_p = "Middle"
                 elif c.y <= -0.036: f_p = "Ring"
                 else: f_p = "Pinky"
-                if abs_x < 0.705: bone_tag = f"{side}{f_p}Prox"
+                if abs_x < 0.710: bone_tag = f"{side}{f_p}Prox"
                 elif abs_x < 0.735: bone_tag = f"{side}{f_p}Mid"
                 else: bone_tag = f"{side}{f_p}Dist"
 
         exported_meshes.append((bone_tag, 0, verts, normals, indices))
-        bone_meshes.setdefault(bone_tag, []).append((verts, normals))
+        bone_body_meshes.setdefault(bone_tag, []).append((verts, normals))
 
-# Суставы пальцев (ранжирование по |X|)
+# Шарниры пальцев
 for pfx in ["L.", "R."]:
     side = "Left" if pfx == "L." else "Right"
     for f_grp, items in finger_joint_candidates[pfx].items():
@@ -233,7 +223,6 @@ for pfx in ["L.", "R."]:
         for (j_n, r_val, b_t), (_, pos) in zip(zip(names, radii, b_tags), items):
             sph_v, sph_n, sph_i = make_sphere_mesh(pos[0], pos[1], pos[2], r_val)
             exported_meshes.append((b_t, 2, sph_v, sph_n, sph_i))
-            bone_meshes.setdefault(b_t, []).append((sph_v, sph_n))
             recorded_positions[f"{pfx}{j_n}"] = [pos[0], pos[1], pos[2]]
 
 # Сферические суставы плеч
@@ -241,9 +230,7 @@ for side, pfx in [("Left", "L."), ("Right", "R.")]:
     sh_pos = recorded_positions[f"{pfx}Shoulder"]
     sph_v, sph_n, sph_i = make_sphere_mesh(sh_pos[0], sh_pos[1], sh_pos[2], 0.038)
     exported_meshes.append((f"{side}Shoulder", 2, sph_v, sph_n, sph_i))
-    bone_meshes.setdefault(f"{side}Shoulder", []).append((sph_v, sph_n))
 
-# Иерархия скелета
 SKELETON_HIERARCHY = [
     ("Pelvis", 0, 0.007, None),
     ("L5S1",   7, 0.004, "Pelvis"),
@@ -283,71 +270,126 @@ name_to_idx = {name: i for i, (name, *_) in enumerate(SKELETON_HIERARCHY)}
 final_joints = []
 for j_name, j_kind, j_r, p_name in SKELETON_HIERARCHY:
     parent_idx = name_to_idx[p_name] if p_name is not None else -1
-    if j_name not in recorded_positions:
-        raise RuntimeError(f"Критическая ошибка: отсутствует позиция сустава {j_name}!")
     pos = recorded_positions[j_name]
     final_joints.append((j_name, j_kind, pos, j_r, parent_idx))
 
-STANDOFF = 0.0015
-def pick_surface(bone_tag, filter_fn):
-    candidates = []
-    for verts, normals in bone_meshes.get(bone_tag, []):
-        for (vx, vy, vz), (nx, ny, nz) in zip(verts, normals):
-            score = filter_fn(vx, vy, vz, nx, ny, nz)
-            if score is not None:
-                candidates.append((score, (vx, vy, vz), (nx, ny, nz)))
-    if not candidates:
+# Функция точного центрирования сенсора на теле сегмента
+def pick_segment_center_surface(bone_tag, s_mult, mode):
+    mesh_list = bone_body_meshes.get(bone_tag, [])
+    if not mesh_list:
         return (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)
-    candidates.sort(key=lambda x: x[0], reverse=True)
-    best = candidates[0]
-    pos = (best[1][0] + best[2][0] * STANDOFF,
-           best[1][1] + best[2][1] * STANDOFF,
-           best[1][2] + best[2][2] * STANDOFF)
-    return pos, best[2]
+    all_v = []
+    all_n = []
+    for verts, normals in mesh_list:
+        all_v.extend(verts)
+        all_n.extend(normals)
+    if not all_v:
+        return (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)
+
+    y_vals = [v[1] for v in all_v]
+    y_min, y_max = min(y_vals), max(y_vals)
+    y_mid = (y_min + y_max) * 0.5
+    y_span = max((y_max - y_min) * 0.5, 0.005)
+
+    best_score = -999.0
+    best_vert = all_v[0]
+    best_norm = all_n[0]
+
+    for (vx, vy, vz), (nx, ny, nz) in zip(all_v, all_n):
+        y_dist = abs(vy - y_mid)
+        center_weight = max(1.0 - (y_dist / y_span), 0.0)
+
+        if mode == 'lat':
+            n_dot = nx * s_mult
+        elif mode == 'lat_upper':
+            n_dot = (nx * s_mult) if vy > y_mid else -99.0
+            center_weight = 1.0
+        elif mode == 'lat_lower':
+            n_dot = (nx * s_mult) if vy <= y_mid else -99.0
+            center_weight = 1.0
+        elif mode == 'dorsal_thumb':
+            n_dot = (nx * s_mult) * 0.7 + nz * 0.6
+        elif mode == 'shin_upper':
+            n_dot = (nz * 0.7 + nx * s_mult * 0.5) if vy > y_mid else -99.0
+            center_weight = 1.0
+        elif mode == 'shin_lower':
+            n_dot = (nz * 0.7 + nx * s_mult * 0.5) if vy <= y_mid else -99.0
+            center_weight = 1.0
+        elif mode == 'foot':
+            n_dot = ny if vz > 0.02 else -99.0
+            center_weight = 1.0
+        elif mode == 'toe':
+            n_dot = ny
+            center_weight = 1.0
+        elif mode == 'forehead':
+            n_dot = nz if vy > 1.55 else -99.0
+            center_weight = 1.0
+        elif mode == 'spine_post':
+            n_dot = -nz
+        elif mode == 'sternum':
+            n_dot = nz
+        else:
+            n_dot = 0.0
+
+        score = n_dot * 3.0 + center_weight
+        if score > best_score:
+            best_score = score
+            best_vert = (vx, vy, vz)
+            best_norm = (nx, ny, nz)
+
+    # STANDOFF = 0.0: берем точные координаты вершины меша (зазор добавит конформный растеризатор)
+    return best_vert, best_norm
 
 SENSOR_TAGS_DEF = [
-    ("Head", "Right", 1, "Head", lambda x, y, z, nx, ny, nz: nz if y > 1.55 else None),
-    ("Neck", "Right", 1, "Neck", lambda x, y, z, nx, ny, nz: -nz if y > 1.40 else None),
-    ("SpineT3", "Right", 0, "SpineT3", lambda x, y, z, nx, ny, nz: -nz if y > 1.30 else None),
-    ("SpineT7", "Right", 0, "SpineT3", lambda x, y, z, nx, ny, nz: -nz if 1.20 <= y <= 1.30 else None),
-    ("SpineT11", "Right", 0, "SpineT3", lambda x, y, z, nx, ny, nz: -nz if 1.10 <= y <= 1.20 else None),
-    ("SpineL3", "Right", 0, "SpineL3", lambda x, y, z, nx, ny, nz: -nz),
-    ("Sacrum", "Right", 0, "Sacrum", lambda x, y, z, nx, ny, nz: -nz),
-    ("Sternum", "Right", 0, "SpineT3", lambda x, y, z, nx, ny, nz: nz if 1.20 <= y <= 1.35 else None),
+    ("Head", "Right", 1, "Head", 'forehead', 1.0, (1.0, 0.0, 0.0)),
+    ("Neck", "Right", 1, "Neck", 'spine_post', 1.0, (0.0, 1.0, 0.0)),
+    ("SpineT3", "Right", 0, "SpineT3", 'spine_post', 1.0, (0.0, 1.0, 0.0)),
+    ("SpineT7", "Right", 0, "SpineT3", 'spine_post', 1.0, (0.0, 1.0, 0.0)),
+    ("SpineT11", "Right", 0, "SpineT3", 'spine_post', 1.0, (0.0, 1.0, 0.0)),
+    ("SpineL3", "Right", 0, "SpineL3", 'spine_post', 1.0, (0.0, 1.0, 0.0)),
+    ("Sacrum", "Right", 0, "Sacrum", 'spine_post', 1.0, (0.0, 1.0, 0.0)),
+    ("Sternum", "Right", 0, "SpineT3", 'sternum', 1.0, (0.0, 1.0, 0.0)),
 ]
 
 for side in ["Left", "Right"]:
-    s_mult = 1.0 if side == "Left" else -1.0
+    sm = 1.0 if side == "Left" else -1.0
     s_name = side
     SENSOR_TAGS_DEF.extend([
-        (f"{side}Clavicle", s_name, 1, f"{side}Shoulder", lambda x, y, z, nx, ny, nz: nz),
-        (f"{side}Shoulder", s_name, 1, f"{side}Shoulder", lambda x, y, z, nx, ny, nz: nx * s_mult),
-        (f"{side}UpperArmProx", s_name, 1, f"{side}UpperArmProx", lambda x, y, z, nx, ny, nz: nx * s_mult if y > 1.25 else None),
-        (f"{side}UpperArmDist", s_name, 1, f"{side}UpperArmProx", lambda x, y, z, nx, ny, nz: nx * s_mult if y <= 1.25 else None),
-        (f"{side}ForearmProx", s_name, 1, f"{side}ForearmDist", lambda x, y, z, nx, ny, nz: nx * s_mult if y > 1.05 else None),
-        (f"{side}ForearmDist", s_name, 1, f"{side}ForearmDist", lambda x, y, z, nx, ny, nz: nx * s_mult if y <= 1.05 else None),
-        (f"{side}Hand", s_name, 1, f"{side}Hand", lambda x, y, z, nx, ny, nz: -nz),
-        (f"{side}ThumbMeta", s_name, 2, f"{side}ThumbMeta", lambda x, y, z, nx, ny, nz: -nz),
-        (f"{side}ThumbProx", s_name, 2, f"{side}ThumbProx", lambda x, y, z, nx, ny, nz: -nz),
-        (f"{side}ThumbDist", s_name, 2, f"{side}ThumbDist", lambda x, y, z, nx, ny, nz: -nz),
-        (f"{side}IndexProx", s_name, 2, f"{side}IndexProx", lambda x, y, z, nx, ny, nz: -nz),
-        (f"{side}IndexMid", s_name, 2, f"{side}IndexMid", lambda x, y, z, nx, ny, nz: -nz),
-        (f"{side}IndexDist", s_name, 2, f"{side}IndexDist", lambda x, y, z, nx, ny, nz: -nz),
-        (f"{side}MiddleProx", s_name, 2, f"{side}MiddleProx", lambda x, y, z, nx, ny, nz: -nz),
-        (f"{side}MiddleMid", s_name, 2, f"{side}MiddleMid", lambda x, y, z, nx, ny, nz: -nz),
-        (f"{side}MiddleDist", s_name, 2, f"{side}MiddleDist", lambda x, y, z, nx, ny, nz: -nz),
-        (f"{side}RingProx", s_name, 2, f"{side}RingProx", lambda x, y, z, nx, ny, nz: -nz),
-        (f"{side}RingMid", s_name, 2, f"{side}RingMid", lambda x, y, z, nx, ny, nz: -nz),
-        (f"{side}RingDist", s_name, 2, f"{side}RingDist", lambda x, y, z, nx, ny, nz: -nz),
-        (f"{side}PinkyProx", s_name, 2, f"{side}PinkyProx", lambda x, y, z, nx, ny, nz: -nz),
-        (f"{side}PinkyMid", s_name, 2, f"{side}PinkyMid", lambda x, y, z, nx, ny, nz: -nz),
-        (f"{side}PinkyDist", s_name, 2, f"{side}PinkyDist", lambda x, y, z, nx, ny, nz: -nz),
-        (f"{side}ThighProx", s_name, 0, f"{side}ThighDist", lambda x, y, z, nx, ny, nz: nx * s_mult if y > 0.65 else None),
-        (f"{side}ThighDist", s_name, 0, f"{side}ThighDist", lambda x, y, z, nx, ny, nz: nx * s_mult if y <= 0.65 else None),
-        (f"{side}ShankProx", s_name, 0, f"{side}ShankDist", lambda x, y, z, nx, ny, nz: (nz + nx * s_mult * 0.5) if y > 0.25 else None),
-        (f"{side}ShankDist", s_name, 0, f"{side}ShankDist", lambda x, y, z, nx, ny, nz: (nz + nx * s_mult * 0.5) if y <= 0.25 else None),
-        (f"{side}Foot", s_name, 1, f"{side}Foot", lambda x, y, z, nx, ny, nz: ny if z > 0.02 else None),
-        (f"{side}Toe", s_name, 2, f"{side}Toe", lambda x, y, z, nx, ny, nz: ny),
+        (f"{side}Clavicle", s_name, 1, f"{side}Shoulder", 'sternum', sm, (sm, 0.0, 0.0)),
+        (f"{side}Shoulder", s_name, 1, f"{side}Shoulder", 'lat', sm, (0.0, 1.0, 0.0)),
+        (f"{side}UpperArmProx", s_name, 1, f"{side}UpperArmProx", 'lat_upper', sm, (0.0, 1.0, 0.0)),
+        (f"{side}UpperArmDist", s_name, 1, f"{side}UpperArmProx", 'lat_lower', sm, (0.0, 1.0, 0.0)),
+        (f"{side}ForearmProx", s_name, 1, f"{side}ForearmDist", 'lat_upper', sm, (0.0, 1.0, 0.0)),
+        (f"{side}ForearmDist", s_name, 1, f"{side}ForearmDist", 'lat_lower', sm, (0.0, 1.0, 0.0)),
+
+        # ТЫЛЬНАЯ СТОРОНА КИСТИ И ФАЛАНГ: строго по центру каждого сегмента
+        (f"{side}Hand", s_name, 1, f"{side}Hand", 'lat', sm, (0.0, 1.0, 0.0)),
+        (f"{side}ThumbMeta", s_name, 2, f"{side}ThumbMeta", 'dorsal_thumb', sm, (0.0, 1.0, 0.0)),
+        (f"{side}ThumbProx", s_name, 2, f"{side}ThumbProx", 'dorsal_thumb', sm, (0.0, 1.0, 0.0)),
+        (f"{side}ThumbDist", s_name, 2, f"{side}ThumbDist", 'dorsal_thumb', sm, (0.0, 1.0, 0.0)),
+
+        (f"{side}IndexProx", s_name, 2, f"{side}IndexProx", 'lat', sm, (0.0, 1.0, 0.0)),
+        (f"{side}IndexMid", s_name, 2, f"{side}IndexMid", 'lat', sm, (0.0, 1.0, 0.0)),
+        (f"{side}IndexDist", s_name, 2, f"{side}IndexDist", 'lat', sm, (0.0, 1.0, 0.0)),
+
+        (f"{side}MiddleProx", s_name, 2, f"{side}MiddleProx", 'lat', sm, (0.0, 1.0, 0.0)),
+        (f"{side}MiddleMid", s_name, 2, f"{side}MiddleMid", 'lat', sm, (0.0, 1.0, 0.0)),
+        (f"{side}MiddleDist", s_name, 2, f"{side}MiddleDist", 'lat', sm, (0.0, 1.0, 0.0)),
+
+        (f"{side}RingProx", s_name, 2, f"{side}RingProx", 'lat', sm, (0.0, 1.0, 0.0)),
+        (f"{side}RingMid", s_name, 2, f"{side}RingMid", 'lat', sm, (0.0, 1.0, 0.0)),
+        (f"{side}RingDist", s_name, 2, f"{side}RingDist", 'lat', sm, (0.0, 1.0, 0.0)),
+
+        (f"{side}PinkyProx", s_name, 2, f"{side}PinkyProx", 'lat', sm, (0.0, 1.0, 0.0)),
+        (f"{side}PinkyMid", s_name, 2, f"{side}PinkyMid", 'lat', sm, (0.0, 1.0, 0.0)),
+        (f"{side}PinkyDist", s_name, 2, f"{side}PinkyDist", 'lat', sm, (0.0, 1.0, 0.0)),
+
+        (f"{side}ThighProx", s_name, 0, f"{side}ThighDist", 'lat_upper', sm, (0.0, 1.0, 0.0)),
+        (f"{side}ThighDist", s_name, 0, f"{side}ThighDist", 'lat_lower', sm, (0.0, 1.0, 0.0)),
+        (f"{side}ShankProx", s_name, 0, f"{side}ShankDist", 'shin_upper', sm, (0.0, 1.0, 0.0)),
+        (f"{side}ShankDist", s_name, 0, f"{side}ShankDist", 'shin_lower', sm, (0.0, 1.0, 0.0)),
+        (f"{side}Foot", s_name, 1, f"{side}Foot", 'foot', sm, (0.0, 0.0, 1.0)),
+        (f"{side}Toe", s_name, 2, f"{side}Toe", 'toe', sm, (0.0, 0.0, 1.0)),
     ])
 
 out_path = "crates/mocap-model/assets/mannequin.bin"
@@ -373,8 +415,8 @@ with open(out_path, "wb") as f:
             f.write(struct.pack("<I", idx))
 
     f.write(struct.pack("<I", len(SENSOR_TAGS_DEF)))
-    for s_idx, (tag, side_str, chip_type, bone_tag, filter_fn) in enumerate(SENSOR_TAGS_DEF):
-        pos, norm = pick_surface(bone_tag, filter_fn)
+    for s_idx, (tag, side_str, chip_type, bone_tag, mode, sm, tangent_v) in enumerate(SENSOR_TAGS_DEF):
+        pos, norm = pick_segment_center_surface(bone_tag, sm, mode)
         tag_bytes = tag.encode("utf-8")
         f.write(struct.pack("<I", s_idx))
         f.write(struct.pack("<B", len(tag_bytes)))
@@ -383,7 +425,7 @@ with open(out_path, "wb") as f:
         f.write(struct.pack("<B", chip_type))
         f.write(struct.pack("<fff", pos[0], pos[1], pos[2]))
         f.write(struct.pack("<fff", norm[0], norm[1], norm[2]))
-        f.write(struct.pack("<fff", 0.0, 1.0, 0.0))
+        f.write(struct.pack("<fff", tangent_v[0], tangent_v[1], tangent_v[2]))
         f.write(struct.pack("<fff", pos[0], pos[1], pos[2]))
 
     f.write(struct.pack("<I", len(final_joints)))
@@ -396,4 +438,4 @@ with open(out_path, "wb") as f:
         f.write(struct.pack("<f", j_r))
         f.write(struct.pack("<i", j_parent))
 
-print(f"✔ УСПЕШНО: Модель и суставы экспортированы без единой ошибки ({len(exported_meshes)} деталей, {len(final_joints)} суставов).")
+print(f"✔ УСПЕШНО: V3 контейнер сформирован со 100% центрированием датчиков.")

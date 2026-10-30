@@ -1,6 +1,6 @@
 //! # Интерактивный манипулятор датчиков, меню чувствительности и фокуса (`interact`)
 
-use super::placement;
+use super::placement::{self, MannequinPose};
 use super::viewport::OrbitalCamera;
 use egui::{
     Area, Button, Context, CursorIcon, Frame, Id, Order, PointerButton, Rect, Response, RichText,
@@ -43,7 +43,22 @@ fn show_tools(ctx: &Context, rect: Rect) {
                 ui.add_space(2.0);
                 ui.separator();
 
-                // Независимая матрица переключателей визуализации
+                // Переключение позы манекена (N-поза <-> T-поза)
+                ui.label(RichText::new("Поза манекена").strong());
+                ui.horizontal(|ui| {
+                    let cur_pose = placement::target_pose();
+                    if ui.selectable_label(cur_pose == MannequinPose::NPose, "🧍 N-поза").on_hover_text("Руки опущены вдоль туловища").clicked() {
+                        placement::set_target_pose(MannequinPose::NPose);
+                    }
+                    if ui.selectable_label(cur_pose == MannequinPose::TPose, "🤸 T-поза").on_hover_text("Руки разведены горизонтально в стороны").clicked() {
+                        placement::set_target_pose(MannequinPose::TPose);
+                    }
+                });
+
+                ui.add_space(2.0);
+                ui.separator();
+
+                // Матрица переключателей видимости элементов сцены
                 ui.label(RichText::new("Режимы отображения").strong());
                 ui.horizontal_wrapped(|ui| {
                     let mut show_mesh = placement::show_mesh();
