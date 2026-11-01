@@ -72,7 +72,6 @@ fn find_phalanx_dorsal_point(
     for (i, p) in prims.iter().enumerate() {
         if prim_bones.get(i).copied() == Some(target_tag) {
             if let Prim::Mesh { vertices, normals, tone, .. } = p {
-                // Исключаем суставные шарниры (Tone::Plate), берем только тело фаланги
                 if *tone == Tone::Plate || vertices.is_empty() {
                     continue;
                 }
@@ -95,7 +94,6 @@ fn find_phalanx_dorsal_point(
                     let y_dist = (v[1] - y_mid).abs();
                     let z_dist = (v[2] - z_mid).abs();
 
-                    // Штрафуем отклонение от центра высоты (Y) и центра ширины (Z)
                     let score = n_lat * 6.0 - (y_dist / y_span) * 20.0 - (z_dist / z_span) * 20.0;
                     if score > best_score {
                         best_score = score;
@@ -296,6 +294,12 @@ fn sanitize_sensor_sites(prims: &[Prim], prim_bones: &[&'static str], sites: &mu
                 } else {
                     s.pos = [-0.205, 0.785, 0.037];
                 }
+            }
+            // 7. Подавление промежуточной фантомной метки ThumbProx (на кисти присутствуют только ThumbMeta и ThumbDist)
+            "LeftThumbProx" | "RightThumbProx" => {
+                s.pos = [0.0, -999.0, 0.0];
+                s.normal = [0.0, 1.0, 0.0];
+                s.chip = Chip::Small;
             }
             _ => {}
         }

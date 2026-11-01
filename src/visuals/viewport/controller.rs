@@ -70,6 +70,10 @@ impl OrbitalCamera {
                 let mut best_d = 0.12_f32;
 
                 for chip in &placement::chips() {
+                    if chip.vertices.is_empty() {
+                        continue;
+                    }
+
                     let w = [
                         chip.pos[0] - origin[0],
                         chip.pos[1] - origin[1],

@@ -90,6 +90,7 @@ impl SensorLayoutManager {
     pub fn pick(&self, p: V3) -> Option<usize> {
         self.chips
             .iter()
+            .filter(|c| !c.vertices.is_empty())
             .map(|c| (c.id, dist(c.pos, p), (c.chip.half() * 1.6).max(0.016)))
             .filter(|&(_, d, tol)| d < tol)
             .min_by(|a, b| a.1.total_cmp(&b.1))
@@ -184,12 +185,34 @@ pub fn fit_tangent(hint: V3, n: V3) -> V3 {
 #[must_use]
 pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
     let site = &skeleton().sites[id];
+
+    // Подавляем только неиспользуемые фантомные промежуточные узлы ThumbProx и точки из центра брюшной полости
+    let is_phantom = site.tag == "LeftThumbProx"
+        || site.tag == "RightThumbProx"
+        || (pos[0].abs() < 0.05 && (pos[1] - 1.0).abs() < 0.05 && pos[2].abs() < 0.05);
+
+    if is_phantom {
+        return PlacedChip {
+            id,
+            tag: site.tag,
+            chip: site.chip,
+            pos: [0.0, -999.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            tangent: [1.0, 0.0, 0.0],
+            vertices: Vec::new(),
+            normals: Vec::new(),
+            indices: Vec::new(),
+            patch: [[0.0; 3]; 9],
+            patch_n: [[0.0, 1.0, 0.0]; 9],
+        };
+    }
+
     let n = norm(normal);
     let u = fit_tangent(tangent, n);
     let v = norm(cross(n, u));
     let r = site.chip.half();
 
-    // 1. Поиск поверхности строго в пределах 35 мм (блокирует прострел луча на бедро при микросмещениях)
+    // 1. Поиск поверхности строго в пределах 35 мм
     let center_surf = {
         let ray_o = madd(pos, n, 0.012);
         let ray_d = scale(n, -1.0);

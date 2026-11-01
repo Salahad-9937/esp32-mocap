@@ -143,6 +143,10 @@ pub fn draw_scene_3d(
     // 2. Отрисовка объемных сенсорных шайб (толщина 2 мм, радиальная форма)
     if show_sensors {
         for (st, q) in chips.iter().zip(quats) {
+            if st.vertices.is_empty() {
+                continue;
+            }
+
             let tf = transforms.and_then(|t| t.get(st.tag));
             let color = if selected == Some(st.id) {
                 [1.0, 0.88, 0.20, 1.0]
@@ -173,6 +177,10 @@ pub fn draw_scene_3d(
     // 4. Локальные ортогональные базисы ориентации датчиков
     if show_sensors {
         for (st, q) in chips.iter().zip(quats) {
+            if st.vertices.is_empty() {
+                continue;
+            }
+
             if let Some(quat) = q {
                 let tf = transforms.and_then(|t| t.get(st.tag));
                 let chip_pos = transform_v3(st.pos, tf);

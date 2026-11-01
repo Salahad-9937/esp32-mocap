@@ -190,8 +190,7 @@ for obj in parts:
             elif abs_x < 0.52: bone_tag = f"{side}ForearmDist"
             elif abs_x < 0.65 and c.y > -0.09: bone_tag = f"{side}Hand"
             elif c.y <= -0.095:
-                if abs_x < 0.645: bone_tag = f"{side}ThumbMeta"
-                elif abs_x < 0.675: bone_tag = f"{side}ThumbProx"
+                if abs_x < 0.660: bone_tag = f"{side}ThumbMeta"
                 else: bone_tag = f"{side}ThumbDist"
             else:
                 if c.y <= -0.072: f_p = "Index"
