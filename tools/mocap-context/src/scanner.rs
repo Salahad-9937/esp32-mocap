@@ -37,6 +37,13 @@ pub fn default_components() -> Vec<ProjectComponent> {
             kind: ComponentKind::CodeCrate,
         },
         ProjectComponent {
+            name: "assets".to_string(),
+            path: "assets".to_string(),
+            description: "Исходные 3D-ассеты манекена и документация пайплайна".to_string(),
+            level: DetailLevel::Full,
+            kind: ComponentKind::Directory,
+        },
+        ProjectComponent {
             name: "docs".to_string(),
             path: "docs".to_string(),
             description: "Спецификации, регламенты и границы проекта MoCap".to_string(),
@@ -72,6 +79,17 @@ pub fn default_components() -> Vec<ProjectComponent> {
             kind: ComponentKind::Directory,
         },
     ]
+}
+
+/// Определяет, является ли файл тяжелой 3D-геометрией или бинарным ассетом модели.
+#[must_use]
+pub fn is_3d_asset(rel_path: &str) -> bool {
+    let path = Path::new(rel_path);
+    let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+    matches!(
+        ext,
+        "blend" | "gltf" | "glb" | "bin" | "obj" | "fbx" | "dae" | "stl" | "ma" | "mb"
+    )
 }
 
 #[must_use]
@@ -173,6 +191,7 @@ fn is_ignored(rel_path: &str, ignore_patterns: &[String]) -> bool {
         || file_name.ends_with(".ttf")
         || file_name.ends_with(".otf")
         || file_name.ends_with(".pdf")
+        || file_name.ends_with(".blend1")
         || file_name == "project_context.txt"
         || file_name.starts_with("supplement_")
     {

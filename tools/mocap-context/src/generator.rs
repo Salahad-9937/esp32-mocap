@@ -2,7 +2,7 @@
 
 use crate::config::{ContextConfig, DetailLevel, ProjectComponent};
 use crate::extractor::{extract_rust_contracts, extract_rust_tests_only, strip_rust_tests};
-use crate::scanner::scan_component_files;
+use crate::scanner::{is_3d_asset, scan_component_files};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -67,6 +67,22 @@ pub fn generate_context_file(
 
         for rel_path in files {
             let full_path = root_dir.join(&rel_path);
+
+            // Обработка 3D-ассетов: формирование компактного метаданного дескриптора
+            if is_3d_asset(&rel_path) {
+                let size_str = fs::metadata(&full_path)
+                    .map(|m| format_file_size(m.len()))
+                    .unwrap_or_else(|_| "unknown size".to_string());
+                let desc = describe_3d_asset(&rel_path);
+                output.push_str(&format!("--- START OF FILE {rel_path} ---\n"));
+                output.push_str(&format!(
+                    "[3D Geometry Asset: {desc} | Размер: {size_str} | Локация: {rel_path}]\n"
+                ));
+                output.push_str(&format!("--- END OF FILE {rel_path} ---\n\n"));
+                total_files += 1;
+                continue;
+            }
+
             let Ok(raw_content) = fs::read_to_string(&full_path) else {
                 continue;
             };
@@ -135,6 +151,21 @@ pub fn generate_supplement_drop(
 
     for rel_path in files {
         let full_path = root_dir.join(&rel_path);
+
+        if is_3d_asset(&rel_path) {
+            let size_str = fs::metadata(&full_path)
+                .map(|m| format_file_size(m.len()))
+                .unwrap_or_else(|_| "unknown size".to_string());
+            let desc = describe_3d_asset(&rel_path);
+            output.push_str(&format!("--- START OF FILE {rel_path} ---\n"));
+            output.push_str(&format!(
+                "[3D Geometry Asset: {desc} | Размер: {size_str} | Локация: {rel_path}]\n"
+            ));
+            output.push_str(&format!("--- END OF FILE {rel_path} ---\n\n"));
+            total_files += 1;
+            continue;
+        }
+
         let Ok(raw_content) = fs::read_to_string(&full_path) else {
             continue;
         };
@@ -218,8 +249,21 @@ pub fn generate_changes_report(
                 || rel_path.ends_with(".log")
                 || rel_path.ends_with(".ttf")
                 || rel_path.ends_with(".otf")
+                || rel_path.ends_with(".blend1")
                 || rel_path.starts_with(".context_state.")
             {
+                continue;
+            }
+
+            if is_3d_asset(rel_path) {
+                let full_path = root_dir.join(rel_path);
+                let size_str = fs::metadata(&full_path)
+                    .map(|m| format_file_size(m.len()))
+                    .unwrap_or_else(|_| "unknown size".to_string());
+                let desc = describe_3d_asset(rel_path);
+                output.push_str(&format!("\n--- START OF UNTRACKED 3D ASSET: {rel_path} ---\n"));
+                output.push_str(&format!("[3D Geometry Asset: {desc} | Размер: {size_str} | Локация: {rel_path}]\n"));
+                output.push_str(&format!("--- END OF UNTRACKED 3D ASSET: {rel_path} ---\n"));
                 continue;
             }
 
@@ -236,6 +280,32 @@ pub fn generate_changes_report(
     fs::write(&output_path, &output).map_err(|e| e.to_string())?;
 
     Ok((output_filename.to_string(), output.len()))
+}
+
+fn format_file_size(bytes: u64) -> String {
+    if bytes >= 1024 * 1024 {
+        format!("{:.1} МБ", bytes as f64 / (1024.0 * 1024.0))
+    } else if bytes >= 1024 {
+        format!("{:.1} КБ", bytes as f64 / 1024.0)
+    } else {
+        format!("{bytes} Б")
+    }
+}
+
+fn describe_3d_asset(rel_path: &str) -> &'static str {
+    if rel_path.ends_with(".blend") {
+        "Исходная 3D-сцена Blender (модульный манекен человека)"
+    } else if rel_path.ends_with(".bin") {
+        "Скомпилированный бинарный контейнер MOCAP_MESH_V3 (меши, суставы, сенсорные позиции)"
+    } else if rel_path.ends_with(".gltf") || rel_path.ends_with(".glb") {
+        "3D-модель стандарта glTF/GLB"
+    } else if rel_path.ends_with(".obj") {
+        "3D-модель Wavefront OBJ"
+    } else if rel_path.ends_with(".fbx") {
+        "3D-модель Autodesk FBX"
+    } else {
+        "Файл 3D-геометрии"
+    }
 }
 
 fn collect_hardware_info() -> String {

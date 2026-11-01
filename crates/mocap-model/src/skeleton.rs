@@ -89,7 +89,7 @@ impl Chip {
         match self {
             Chip::Large => 0.014,
             Chip::Medium => 0.010,
-            Chip::Small => 0.0055,
+            Chip::Small => 0.0046, // Деликатное уменьшение диаметра фаланг с 11.0 мм до 9.2 мм
         }
     }
 

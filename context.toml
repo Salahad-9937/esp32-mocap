@@ -27,6 +27,7 @@ ignore_patterns = [
     "*.ico",
     "*.ttf",
     "*.otf",
+    "*.blend1",
     "project_context.txt",
     "supplement_*.txt",
 ]

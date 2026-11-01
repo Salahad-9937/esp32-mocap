@@ -59,6 +59,122 @@ fn read_v3(bytes: &[u8], cursor: &mut usize) -> [f32; 3] {
     [x, y, z]
 }
 
+/// Точечная корректировка ключевых анатомических ориентиров
+fn sanitize_sensor_sites(sites: &mut [SensorSite]) {
+    for s in sites.iter_mut() {
+        match s.tag {
+            // 1. Голова: затылок (Occiput)
+            "Head" => {
+                s.pos = [0.0, 1.630, -0.015];
+                s.normal = [0.0, 0.050, -0.999];
+                s.tangent = [1.0, 0.0, 0.0];
+                s.support = [0.0, 1.620, 0.040];
+            }
+            // 2. Задняя поверхность позвоночника: устранение провала между лопатками
+            "Neck" => {
+                s.pos = [0.0, 1.490, -0.010];
+                s.normal = [0.0, 0.080, -0.997];
+                s.tangent = [0.0, 1.0, 0.0];
+                s.support = [0.0, 1.469, 0.021];
+            }
+            "SpineT3" => {
+                s.pos = [0.0, 1.370, -0.035];
+                s.normal = [0.0, 0.020, -0.999];
+                s.tangent = [0.0, 1.0, 0.0];
+                s.support = [0.0, 1.300, 0.054];
+            }
+            "SpineT7" => {
+                s.pos = [0.0, 1.270, -0.015];
+                s.normal = [0.0, 0.010, -0.999];
+                s.tangent = [0.0, 1.0, 0.0];
+                s.support = [0.0, 1.250, 0.058];
+            }
+            "SpineT11" => {
+                s.pos = [0.0, 1.170, -0.008];
+                s.normal = [0.0, -0.020, -0.999];
+                s.tangent = [0.0, 1.0, 0.0];
+                s.support = [0.0, 1.200, 0.058];
+            }
+            "SpineL3" => {
+                s.pos = [0.0, 1.070, -0.005];
+                s.normal = [0.0, -0.050, -0.998];
+                s.tangent = [0.0, 1.0, 0.0];
+                s.support = [0.0, 1.113, 0.063];
+            }
+            "Sacrum" => {
+                s.pos = [0.0, 0.960, -0.005];
+                s.normal = [0.0, -0.080, -0.996];
+                s.tangent = [0.0, 1.0, 0.0];
+                s.support = [0.0, 0.961, 0.041];
+            }
+            // 3. Плечи: перенос с шаровых суставов на акромион/ость лопатки (плечевой скат торса)
+            "LeftShoulder" => {
+                s.pos = [0.140, 1.415, 0.010];
+                s.normal = [0.200, 0.950, -0.220];
+                s.tangent = [0.950, -0.200, 0.0];
+                s.support = [0.080, 1.340, 0.036];
+            }
+            "RightShoulder" => {
+                s.pos = [-0.140, 1.415, 0.010];
+                s.normal = [-0.200, 0.950, -0.220];
+                s.tangent = [-0.950, -0.200, 0.0];
+                s.support = [-0.080, 1.340, 0.036];
+            }
+            // 4. Ключицы
+            "LeftClavicle" => {
+                s.pos = [0.095, 1.350, 0.085];
+                s.normal = [0.200, 0.400, 0.894];
+                s.tangent = [0.894, 0.0, -0.200];
+                s.support = [0.080, 1.340, 0.036];
+            }
+            "RightClavicle" => {
+                s.pos = [-0.095, 1.350, 0.085];
+                s.normal = [-0.200, 0.400, 0.894];
+                s.tangent = [-0.894, 0.0, -0.200];
+                s.support = [-0.080, 1.340, 0.036];
+            }
+            // 5. Фаланги мизинцев: ровная продольная посадка
+            "LeftPinkyProx" => {
+                s.pos = [0.205, 0.846, 0.026];
+                s.normal = [1.0, 0.0, 0.0];
+                s.tangent = [0.0, 1.0, 0.0];
+                s.chip = Chip::Small;
+            }
+            "LeftPinkyMid" => {
+                s.pos = [0.205, 0.822, 0.026];
+                s.normal = [1.0, 0.0, 0.0];
+                s.tangent = [0.0, 1.0, 0.0];
+                s.chip = Chip::Small;
+            }
+            "LeftPinkyDist" => {
+                s.pos = [0.205, 0.798, 0.026];
+                s.normal = [1.0, 0.0, 0.0];
+                s.tangent = [0.0, 1.0, 0.0];
+                s.chip = Chip::Small;
+            }
+            "RightPinkyProx" => {
+                s.pos = [-0.205, 0.846, 0.026];
+                s.normal = [-1.0, 0.0, 0.0];
+                s.tangent = [0.0, 1.0, 0.0];
+                s.chip = Chip::Small;
+            }
+            "RightPinkyMid" => {
+                s.pos = [-0.205, 0.822, 0.026];
+                s.normal = [-1.0, 0.0, 0.0];
+                s.tangent = [0.0, 1.0, 0.0];
+                s.chip = Chip::Small;
+            }
+            "RightPinkyDist" => {
+                s.pos = [-0.205, 0.798, 0.026];
+                s.normal = [-1.0, 0.0, 0.0];
+                s.tangent = [0.0, 1.0, 0.0];
+                s.chip = Chip::Small;
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Выполняет быструю десериализацию запеченной 3D-модели манекена из бинарного ресурса.
 #[must_use]
 pub fn build() -> Skeleton {
@@ -117,7 +233,7 @@ pub fn build() -> Skeleton {
         prim_bones.push(bone_tag);
     }
 
-    let sites = if (is_v2 || is_v3) && cursor < bytes.len() {
+    let mut sites = if (is_v2 || is_v3) && cursor < bytes.len() {
         let num_sites = read_u32(bytes, &mut cursor) as usize;
         let mut sites = Vec::with_capacity(num_sites);
 
@@ -169,6 +285,8 @@ pub fn build() -> Skeleton {
     } else {
         build_fallback_sites(&prims, &prim_bones)
     };
+
+    sanitize_sensor_sites(&mut sites);
 
     let joints = if is_v3 && cursor < bytes.len() {
         let num_joints = read_u32(bytes, &mut cursor) as usize;
@@ -226,7 +344,7 @@ pub fn build() -> Skeleton {
 }
 
 fn build_fallback_sites(prims: &[Prim], prim_bones: &[&'static str]) -> Vec<SensorSite> {
-    SENSOR_DEFS
+    let mut sites: Vec<SensorSite> = SENSOR_DEFS
         .iter()
         .enumerate()
         .map(|(id, def)| {
@@ -264,7 +382,10 @@ fn build_fallback_sites(prims: &[Prim], prim_bones: &[&'static str]) -> Vec<Sens
                 chip: def.chip,
             }
         })
-        .collect()
+        .collect();
+
+    sanitize_sensor_sites(&mut sites);
+    sites
 }
 
 fn build_fallback_joints() -> Vec<Joint> {

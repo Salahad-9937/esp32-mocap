@@ -83,8 +83,8 @@ pub fn draw_scene_3d(
     quats: &[Option<[f32; 4]>],
     transforms: Option<&HashMap<&'static str, BoneTransform>>,
 ) {
-    let mut tri_vertices: Vec<GlVertex> = Vec::with_capacity(8192);
-    let mut tri_indices: Vec<u32> = Vec::with_capacity(16384);
+    let mut tri_vertices: Vec<GlVertex> = Vec::with_capacity(12288);
+    let mut tri_indices: Vec<u32> = Vec::with_capacity(24576);
     let mut line_vertices: Vec<GlVertex> = Vec::with_capacity(1024);
     let mut line_indices: Vec<u32> = Vec::with_capacity(1024);
 
@@ -140,7 +140,7 @@ pub fn draw_scene_3d(
     let highlighted = placement::highlight();
     let selected = placement::selected();
 
-    // 2. Отрисовка сенсорных площадок IMU
+    // 2. Отрисовка объемных сенсорных шайб (толщина 2 мм, радиальная форма)
     if show_sensors {
         for (st, q) in chips.iter().zip(quats) {
             let tf = transforms.and_then(|t| t.get(st.tag));
@@ -155,18 +155,14 @@ pub fn draw_scene_3d(
             };
 
             let base = tri_vertices.len() as u32;
-            for k in 0..9 {
-                let pos = transform_v3(st.patch[k], tf);
-                let normal = transform_norm(st.patch_n[k], tf);
-                tri_vertices.push(GlVertex { pos, normal, color, ao: 1.0 });
+            for (i, (&v, &norm_v)) in st.vertices.iter().zip(&st.normals).enumerate() {
+                let pos = transform_v3(v, tf);
+                let normal = transform_norm(norm_v, tf);
+                let ao = if i < 17 { 1.0 } else { 0.82 };
+                tri_vertices.push(GlVertex { pos, normal, color, ao });
             }
-            for row in 0..2u32 {
-                for col in 0..2u32 {
-                    let v00 = base + row * 3 + col;
-                    let (v01, v10, v11) = (v00 + 1, v00 + 3, v00 + 4);
-                    tri_indices.extend([v00, v11, v01, v00, v10, v11]);
-                    tri_indices.extend([v00, v01, v11, v00, v11, v10]);
-                }
+            for &idx in &st.indices {
+                tri_indices.push(base + idx);
             }
         }
     }

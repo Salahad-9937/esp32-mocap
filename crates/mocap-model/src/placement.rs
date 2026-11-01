@@ -1,11 +1,20 @@
 //! # Геометрическое позиционирование сенсорных площадок на меше (`placement`)
 
-use super::math::{cross, dist, dot, madd, norm, scale, sub, V3};
+use super::math::{add, cross, dist, dot, madd, norm, scale, sub, V3};
 use super::skeleton::{skeleton, Chip, SENSOR_COUNT};
 use super::surface::raycast;
 
-/// Минимальный технологический зазор для исключения Z-файтинга (0.8 мм)
-pub const LIFT: f32 = 0.0008;
+/// Толщина корпуса метки датчика (2 мм)
+pub const THICKNESS: f32 = 0.002;
+
+/// Технологический отступ основания шайбы от полигонов меша (0.4 мм)
+pub const BASE_LIFT: f32 = 0.0004;
+
+/// Технологический зазор для обратной совместимости
+pub const LIFT: f32 = BASE_LIFT;
+
+/// Количество радиальных секторов круглой метки (16 секторов)
+pub const SECTORS: usize = 16;
 
 /// Целевая поза манекена
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -15,7 +24,7 @@ pub enum MannequinPose {
     TPose,
 }
 
-/// Дескриптор сенсорной площадки с конформной двусторонней сеткой 3x3
+/// Дескриптор сенсорной площадки с жесткой недеформируемой 3D-шайбой толщиной 2 мм
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlacedChip {
     pub id: usize,
@@ -24,6 +33,9 @@ pub struct PlacedChip {
     pub pos: V3,
     pub normal: V3,
     pub tangent: V3,
+    pub vertices: Vec<V3>,
+    pub normals: Vec<V3>,
+    pub indices: Vec<u32>,
     pub patch: [V3; 9],
     pub patch_n: [V3; 9],
 }
@@ -78,7 +90,7 @@ impl SensorLayoutManager {
     pub fn pick(&self, p: V3) -> Option<usize> {
         self.chips
             .iter()
-            .map(|c| (c.id, dist(c.pos, p), (c.chip.half() * 2.0).max(0.016)))
+            .map(|c| (c.id, dist(c.pos, p), (c.chip.half() * 1.6).max(0.016)))
             .filter(|&(_, d, tol)| d < tol)
             .min_by(|a, b| a.1.total_cmp(&b.1))
             .map(|x| x.0)
@@ -143,7 +155,7 @@ impl SensorLayoutManager {
             return false;
         }
 
-        let speed = 1.45_f32; // Плавный переход за ~0.70 сек
+        let speed = 1.45_f32;
         if self.pose_blend < target {
             self.pose_blend = (self.pose_blend + speed * dt).min(target);
         } else {
@@ -168,53 +180,114 @@ pub fn fit_tangent(hint: V3, n: V3) -> V3 {
     norm(cross(n, [1.0, 0.0, 0.0]))
 }
 
-/// Формирует конформную сетку 3x3 узлов, точно прилегающую к поверхности меша.
+/// Формирует геометрически идеальную недеформируемую шайбу толщиной 2 мм
 #[must_use]
 pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
     let site = &skeleton().sites[id];
     let n = norm(normal);
     let u = fit_tangent(tangent, n);
     let v = norm(cross(n, u));
-    let half = site.chip.half();
-    let (hu, hv) = (half, half * 0.75);
+    let r = site.chip.half();
 
-    let mut patch = [[0.0; 3]; 9];
-    let mut patch_n = [n; 9];
-
-    for row in 0..3 {
-        for col in 0..3 {
-            let k = row * 3 + col;
-            let offset_u = (col as f32 - 1.0) * hu;
-            let offset_v = (row as f32 - 1.0) * hv;
-            let p_nom = madd(madd(pos, u, offset_u), v, offset_v);
-
-            // Пускаем короткий локальный луч перпендикулярно полигону (не более 10 мм)
-            let ray_o = madd(p_nom, n, 0.005);
-            let ray_d = scale(n, -1.0);
-
-            if let Some(hit) = raycast(ray_o, ray_d, 0.010) {
-                if dot(hit.normal, n) > 0.4 {
-                    patch[k] = madd(hit.pos, hit.normal, LIFT);
-                    patch_n[k] = hit.normal;
-                    continue;
-                }
+    // 1. Поиск точки прилегания центра шайбы на полигональной поверхности
+    let center_surf = {
+        let ray_o = madd(pos, n, 0.040);
+        let ray_d = scale(n, -1.0);
+        if let Some(hit) = raycast(ray_o, ray_d, 0.160) {
+            if dot(hit.normal, n) > 0.10 {
+                hit.pos
+            } else {
+                pos
             }
-
-            // Плавное огибание за горизонт фаланги пальца без проникновения в меш
-            let v_ratio = (offset_v.abs() / hv.max(1e-4)).clamp(0.0, 1.0);
-            let curve_falloff = v_ratio * v_ratio * 0.0012;
-            patch[k] = madd(madd(p_nom, n, -curve_falloff), n, LIFT);
-            patch_n[k] = n;
+        } else {
+            pos
         }
+    };
+
+    let c_top = madd(center_surf, n, BASE_LIFT + THICKNESS);
+    let c_bot = madd(center_surf, n, BASE_LIFT);
+
+    // 2. Генерация жесткого плоского каркаса цилиндрической шайбы
+    let mut vertices = Vec::with_capacity(66);
+    let mut normals = Vec::with_capacity(66);
+    let mut indices = Vec::with_capacity(192);
+
+    // Вершины верхней лицевой крышки
+    vertices.push(c_top);
+    normals.push(n);
+    for i in 0..SECTORS {
+        let angle = (i as f32) * (std::f32::consts::TAU / SECTORS as f32);
+        let (sa, ca) = angle.sin_cos();
+        let radial = norm(add(scale(u, ca), scale(v, sa)));
+        let p = madd(c_top, radial, r);
+        vertices.push(p);
+        normals.push(n);
+    }
+    for i in 0..SECTORS {
+        let next = (i + 1) % SECTORS;
+        indices.extend([0, (1 + i) as u32, (1 + next) as u32]);
+    }
+
+    // Вершины боковой цилиндрической обечайки (высота 2 мм)
+    let side_base = vertices.len() as u32;
+    for i in 0..SECTORS {
+        let angle = (i as f32) * (std::f32::consts::TAU / SECTORS as f32);
+        let (sa, ca) = angle.sin_cos();
+        let radial = norm(add(scale(u, ca), scale(v, sa)));
+        let p_top = madd(c_top, radial, r);
+        let p_bot = madd(c_bot, radial, r);
+
+        vertices.push(p_top);
+        normals.push(radial);
+        vertices.push(p_bot);
+        normals.push(radial);
+    }
+    for i in 0..SECTORS {
+        let next = (i + 1) % SECTORS;
+        let t_cur = side_base + (2 * i) as u32;
+        let b_cur = t_cur + 1;
+        let t_nxt = side_base + (2 * next) as u32;
+        let b_nxt = t_nxt + 1;
+        indices.extend([t_cur, b_cur, t_nxt, t_nxt, b_cur, b_nxt]);
+    }
+
+    // Вершины нижней тыльной крышки
+    let bot_base = vertices.len() as u32;
+    vertices.push(c_bot);
+    normals.push(scale(n, -1.0));
+    for i in 0..SECTORS {
+        let angle = (i as f32) * (std::f32::consts::TAU / SECTORS as f32);
+        let (sa, ca) = angle.sin_cos();
+        let radial = norm(add(scale(u, ca), scale(v, sa)));
+        let p = madd(c_bot, radial, r);
+        vertices.push(p);
+        normals.push(scale(n, -1.0));
+    }
+    for i in 0..SECTORS {
+        let next = (i + 1) % SECTORS;
+        indices.extend([bot_base, (bot_base + 1 + next as u32), (bot_base + 1 + i as u32)]);
+    }
+
+    // Сохранение среза совместимости 9 точек
+    let mut patch = [c_top; 9];
+    let patch_n = [n; 9];
+    patch[4] = c_top;
+    for k in 0..8 {
+        let idx = (k * 2) % SECTORS;
+        let target = if k < 4 { k } else { k + 1 };
+        patch[target] = vertices[1 + idx];
     }
 
     PlacedChip {
         id,
         tag: site.tag,
         chip: site.chip,
-        pos: patch[4],
-        normal: patch_n[4],
+        pos: c_top,
+        normal: n,
         tangent: u,
+        vertices,
+        normals,
+        indices,
         patch,
         patch_n,
     }

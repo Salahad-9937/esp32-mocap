@@ -60,13 +60,13 @@ pub fn run_tui(
                 KeyCode::Char('2') => {
                     for comp in &mut components {
                         match comp.name.as_str() {
-                            "firmware" | "src" | "mocap-core" | "mocap-model" | "root" => {
+                            "firmware" | "src" | "mocap-core" | "mocap-model" | "assets" | "root" => {
                                 comp.level = DetailLevel::Full;
                             }
                             _ => comp.level = DetailLevel::ManifestOnly,
                         }
                     }
-                    status_msg = String::from("Пресет 2: Прошивка и ПО (Core, Model, App)");
+                    status_msg = String::from("Пресет 2: Прошивка, ПО и 3D-ассеты (Core, Model, App, Assets)");
                 }
                 KeyCode::Char('3') => {
                     for comp in &mut components {
@@ -144,7 +144,7 @@ fn render_ui(
         ])),
         ListItem::new(Line::from(vec![
             Span::styled("[2] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::raw("Прошивка и ПО (Core & Model)"),
+            Span::raw("ПО, 3D-ассеты и прошивка"),
         ])),
         ListItem::new(Line::from(vec![
             Span::styled("[3] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
