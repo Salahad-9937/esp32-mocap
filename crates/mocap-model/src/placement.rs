@@ -181,15 +181,13 @@ pub fn fit_tangent(hint: V3, n: V3) -> V3 {
     norm(cross(n, [1.0, 0.0, 0.0]))
 }
 
-/// Формирует жесткую плоскую шайбу с локализованным поиском поверхности (окно 35 мм исключает пробитие на бедро)
+/// Формирует жесткую плоскую шайбу с локализованной посадкой на поверхность меша.
 #[must_use]
 pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
     let site = &skeleton().sites[id];
 
-    // Подавляем только неиспользуемые фантомные промежуточные узлы ThumbProx и точки из центра брюшной полости
-    let is_phantom = site.tag == "LeftThumbProx"
-        || site.tag == "RightThumbProx"
-        || (pos[0].abs() < 0.05 && (pos[1] - 1.0).abs() < 0.05 && pos[2].abs() < 0.05);
+    // Подавляем только неиспользуемые фантомные промежуточные узлы ThumbProx
+    let is_phantom = site.tag == "LeftThumbProx" || site.tag == "RightThumbProx" || pos[1] < -500.0;
 
     if is_phantom {
         return PlacedChip {
@@ -212,11 +210,11 @@ pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
     let v = norm(cross(n, u));
     let r = site.chip.half();
 
-    // 1. Поиск поверхности строго в пределах 35 мм
-    let center_surf = {
-        let ray_o = madd(pos, n, 0.012);
+    // 1. Поиск локальной поверхности в узком окне (не более 16 мм, исключая захват соседних конечностей)
+    let mut center_surf = {
+        let ray_o = madd(pos, n, 0.008);
         let ray_d = scale(n, -1.0);
-        if let Some(hit) = raycast(ray_o, ray_d, 0.035) {
+        if let Some(hit) = raycast(ray_o, ray_d, 0.016) {
             if dot(hit.normal, n) > 0.15 {
                 hit.pos
             } else {
@@ -226,6 +224,11 @@ pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
             pos
         }
     };
+
+    // Инвариант: датчики осевого скелета жестко сохраняют координату X = 0.0 без горизонтального дрейфа
+    if pos[0].abs() < 1e-4 {
+        center_surf[0] = 0.0;
+    }
 
     let c_top = madd(center_surf, n, BASE_LIFT + THICKNESS);
     let c_bot = madd(center_surf, n, BASE_LIFT);
