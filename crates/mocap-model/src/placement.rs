@@ -180,7 +180,7 @@ pub fn fit_tangent(hint: V3, n: V3) -> V3 {
     norm(cross(n, [1.0, 0.0, 0.0]))
 }
 
-/// Формирует геометрически идеальную недеформируемую шайбу толщиной 2 мм
+/// Формирует жесткую плоскую шайбу с локализованным поиском поверхности (окно 35 мм исключает пробитие на бедро)
 #[must_use]
 pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
     let site = &skeleton().sites[id];
@@ -189,12 +189,12 @@ pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
     let v = norm(cross(n, u));
     let r = site.chip.half();
 
-    // 1. Поиск точки прилегания центра шайбы на полигональной поверхности
+    // 1. Поиск поверхности строго в пределах 35 мм (блокирует прострел луча на бедро при микросмещениях)
     let center_surf = {
-        let ray_o = madd(pos, n, 0.040);
+        let ray_o = madd(pos, n, 0.012);
         let ray_d = scale(n, -1.0);
-        if let Some(hit) = raycast(ray_o, ray_d, 0.160) {
-            if dot(hit.normal, n) > 0.10 {
+        if let Some(hit) = raycast(ray_o, ray_d, 0.035) {
+            if dot(hit.normal, n) > 0.15 {
                 hit.pos
             } else {
                 pos
@@ -207,12 +207,12 @@ pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
     let c_top = madd(center_surf, n, BASE_LIFT + THICKNESS);
     let c_bot = madd(center_surf, n, BASE_LIFT);
 
-    // 2. Генерация жесткого плоского каркаса цилиндрической шайбы
+    // 2. Генерация жесткой недеформируемой цилиндрической геометрии
     let mut vertices = Vec::with_capacity(66);
     let mut normals = Vec::with_capacity(66);
     let mut indices = Vec::with_capacity(192);
 
-    // Вершины верхней лицевой крышки
+    // Верхняя крышка
     vertices.push(c_top);
     normals.push(n);
     for i in 0..SECTORS {
@@ -228,7 +228,7 @@ pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
         indices.extend([0, (1 + i) as u32, (1 + next) as u32]);
     }
 
-    // Вершины боковой цилиндрической обечайки (высота 2 мм)
+    // Боковая обечайка (высота 2 мм)
     let side_base = vertices.len() as u32;
     for i in 0..SECTORS {
         let angle = (i as f32) * (std::f32::consts::TAU / SECTORS as f32);
@@ -251,7 +251,7 @@ pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
         indices.extend([t_cur, b_cur, t_nxt, t_nxt, b_cur, b_nxt]);
     }
 
-    // Вершины нижней тыльной крышки
+    // Нижняя крышка
     let bot_base = vertices.len() as u32;
     vertices.push(c_bot);
     normals.push(scale(n, -1.0));
@@ -268,7 +268,6 @@ pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
         indices.extend([bot_base, (bot_base + 1 + next as u32), (bot_base + 1 + i as u32)]);
     }
 
-    // Сохранение среза совместимости 9 точек
     let mut patch = [c_top; 9];
     let patch_n = [n; 9];
     patch[4] = c_top;

@@ -59,116 +59,243 @@ fn read_v3(bytes: &[u8], cursor: &mut usize) -> [f32; 3] {
     [x, y, z]
 }
 
-/// Точечная корректировка ключевых анатомических ориентиров
-fn sanitize_sensor_sites(sites: &mut [SensorSite]) {
+/// Находит вершину строго по двухосевому геометрическому центру тела фаланги (Y и Z)
+fn find_phalanx_dorsal_point(
+    prims: &[Prim],
+    prim_bones: &[&'static str],
+    target_tag: &str,
+    side_mult: f32,
+) -> Option<[f32; 3]> {
+    let mut best_score = -999.0_f32;
+    let mut best_v = None;
+
+    for (i, p) in prims.iter().enumerate() {
+        if prim_bones.get(i).copied() == Some(target_tag) {
+            if let Prim::Mesh { vertices, normals, tone, .. } = p {
+                // Исключаем суставные шарниры (Tone::Plate), берем только тело фаланги
+                if *tone == Tone::Plate || vertices.is_empty() {
+                    continue;
+                }
+
+                let y_min = vertices.iter().map(|v| v[1]).fold(f32::INFINITY, f32::min);
+                let y_max = vertices.iter().map(|v| v[1]).fold(f32::NEG_INFINITY, f32::max);
+                let y_mid = (y_min + y_max) * 0.5;
+                let y_span = (y_max - y_min).max(0.004) * 0.5;
+
+                let z_min = vertices.iter().map(|v| v[2]).fold(f32::INFINITY, f32::min);
+                let z_max = vertices.iter().map(|v| v[2]).fold(f32::NEG_INFINITY, f32::max);
+                let z_mid = (z_min + z_max) * 0.5;
+                let z_span = (z_max - z_min).max(0.004) * 0.5;
+
+                for (&v, &n) in vertices.iter().zip(normals) {
+                    let n_lat = n[0] * side_mult;
+                    if n_lat < 0.15 {
+                        continue;
+                    }
+                    let y_dist = (v[1] - y_mid).abs();
+                    let z_dist = (v[2] - z_mid).abs();
+
+                    // Штрафуем отклонение от центра высоты (Y) и центра ширины (Z)
+                    let score = n_lat * 6.0 - (y_dist / y_span) * 20.0 - (z_dist / z_span) * 20.0;
+                    if score > best_score {
+                        best_score = score;
+                        best_v = Some(v);
+                    }
+                }
+            }
+        }
+    }
+    best_v
+}
+
+/// Находит вершину на задней срединной линии позвоночника или головы
+fn find_mesh_posterior_point(
+    prims: &[Prim],
+    prim_bones: &[&'static str],
+    target_tag: &str,
+    target_y: f32,
+) -> Option<[f32; 3]> {
+    let mut best_score = -999.0_f32;
+    let mut best_v = None;
+
+    for (i, p) in prims.iter().enumerate() {
+        if prim_bones.get(i).copied() == Some(target_tag) {
+            if let Prim::Mesh { vertices, normals, .. } = p {
+                for (&v, &n) in vertices.iter().zip(normals) {
+                    let x_dist = v[0].abs();
+                    if x_dist > 0.04 {
+                        continue;
+                    }
+                    let y_dist = (v[1] - target_y).abs();
+                    if y_dist > 0.08 {
+                        continue;
+                    }
+
+                    let n_post = -n[2];
+                    let score = n_post * 4.0 - y_dist * 20.0 - x_dist * 50.0;
+                    if score > best_score {
+                        best_score = score;
+                        best_v = Some(v);
+                    }
+                }
+            }
+        }
+    }
+    best_v
+}
+
+/// Точечная корректировка сенсорных позиций по реальным мешам геометрии
+fn sanitize_sensor_sites(prims: &[Prim], prim_bones: &[&'static str], sites: &mut [SensorSite]) {
     for s in sites.iter_mut() {
         match s.tag {
-            // 1. Голова: затылок (Occiput)
+            // 1. Голова: затылочная область (Occiput)
             "Head" => {
-                s.pos = [0.0, 1.630, -0.015];
                 s.normal = [0.0, 0.050, -0.999];
                 s.tangent = [1.0, 0.0, 0.0];
-                s.support = [0.0, 1.620, 0.040];
+                if let Some(v) = find_mesh_posterior_point(prims, prim_bones, "Head", 1.630) {
+                    s.pos = v;
+                } else {
+                    s.pos = [0.0, 1.630, -0.015];
+                }
             }
-            // 2. Задняя поверхность позвоночника: устранение провала между лопатками
+            // 2. Осевой скелет: точные наружные координаты спины
             "Neck" => {
-                s.pos = [0.0, 1.490, -0.010];
                 s.normal = [0.0, 0.080, -0.997];
                 s.tangent = [0.0, 1.0, 0.0];
-                s.support = [0.0, 1.469, 0.021];
+                if let Some(v) = find_mesh_posterior_point(prims, prim_bones, "Neck", 1.490) {
+                    s.pos = v;
+                } else {
+                    s.pos = [0.0, 1.490, -0.010];
+                }
             }
             "SpineT3" => {
-                s.pos = [0.0, 1.370, -0.035];
                 s.normal = [0.0, 0.020, -0.999];
                 s.tangent = [0.0, 1.0, 0.0];
-                s.support = [0.0, 1.300, 0.054];
+                if let Some(v) = find_mesh_posterior_point(prims, prim_bones, "SpineT3", 1.370) {
+                    s.pos = v;
+                } else {
+                    s.pos = [0.0, 1.370, -0.035];
+                }
             }
             "SpineT7" => {
-                s.pos = [0.0, 1.270, -0.015];
                 s.normal = [0.0, 0.010, -0.999];
                 s.tangent = [0.0, 1.0, 0.0];
-                s.support = [0.0, 1.250, 0.058];
+                if let Some(v) = find_mesh_posterior_point(prims, prim_bones, "SpineT3", 1.270) {
+                    s.pos = v;
+                } else {
+                    s.pos = [0.0, 1.270, -0.015];
+                }
             }
             "SpineT11" => {
-                s.pos = [0.0, 1.170, -0.008];
                 s.normal = [0.0, -0.020, -0.999];
                 s.tangent = [0.0, 1.0, 0.0];
-                s.support = [0.0, 1.200, 0.058];
+                if let Some(v) = find_mesh_posterior_point(prims, prim_bones, "SpineT3", 1.170) {
+                    s.pos = v;
+                } else {
+                    s.pos = [0.0, 1.170, -0.008];
+                }
             }
             "SpineL3" => {
-                s.pos = [0.0, 1.070, -0.005];
                 s.normal = [0.0, -0.050, -0.998];
                 s.tangent = [0.0, 1.0, 0.0];
-                s.support = [0.0, 1.113, 0.063];
+                if let Some(v) = find_mesh_posterior_point(prims, prim_bones, "SpineL3", 1.070) {
+                    s.pos = v;
+                } else {
+                    s.pos = [0.0, 1.070, -0.005];
+                }
             }
             "Sacrum" => {
-                s.pos = [0.0, 0.960, -0.005];
                 s.normal = [0.0, -0.080, -0.996];
                 s.tangent = [0.0, 1.0, 0.0];
-                s.support = [0.0, 0.961, 0.041];
+                if let Some(v) = find_mesh_posterior_point(prims, prim_bones, "Sacrum", 0.960) {
+                    s.pos = v;
+                } else {
+                    s.pos = [0.0, 0.960, -0.005];
+                }
             }
-            // 3. Плечи: перенос с шаровых суставов на акромион/ость лопатки (плечевой скат торса)
+            // 3. Плечи: акромион (плечевой скат торса)
             "LeftShoulder" => {
                 s.pos = [0.140, 1.415, 0.010];
                 s.normal = [0.200, 0.950, -0.220];
                 s.tangent = [0.950, -0.200, 0.0];
-                s.support = [0.080, 1.340, 0.036];
             }
             "RightShoulder" => {
                 s.pos = [-0.140, 1.415, 0.010];
                 s.normal = [-0.200, 0.950, -0.220];
                 s.tangent = [-0.950, -0.200, 0.0];
-                s.support = [-0.080, 1.340, 0.036];
             }
             // 4. Ключицы
             "LeftClavicle" => {
                 s.pos = [0.095, 1.350, 0.085];
                 s.normal = [0.200, 0.400, 0.894];
                 s.tangent = [0.894, 0.0, -0.200];
-                s.support = [0.080, 1.340, 0.036];
             }
             "RightClavicle" => {
                 s.pos = [-0.095, 1.350, 0.085];
                 s.normal = [-0.200, 0.400, 0.894];
                 s.tangent = [-0.894, 0.0, -0.200];
-                s.support = [-0.080, 1.340, 0.036];
             }
-            // 5. Фаланги мизинцев: ровная продольная посадка
+            // 5. Фаланги левого мизинца: двухосевое центрирование по геометрическому центру тела фаланги
             "LeftPinkyProx" => {
-                s.pos = [0.205, 0.846, 0.026];
                 s.normal = [1.0, 0.0, 0.0];
                 s.tangent = [0.0, 1.0, 0.0];
                 s.chip = Chip::Small;
+                if let Some(v) = find_phalanx_dorsal_point(prims, prim_bones, "LeftPinkyProx", 1.0) {
+                    s.pos = v;
+                } else {
+                    s.pos = [0.205, 0.835, 0.037];
+                }
             }
             "LeftPinkyMid" => {
-                s.pos = [0.205, 0.822, 0.026];
                 s.normal = [1.0, 0.0, 0.0];
                 s.tangent = [0.0, 1.0, 0.0];
                 s.chip = Chip::Small;
+                if let Some(v) = find_phalanx_dorsal_point(prims, prim_bones, "LeftPinkyMid", 1.0) {
+                    s.pos = v;
+                } else {
+                    s.pos = [0.205, 0.810, 0.037];
+                }
             }
             "LeftPinkyDist" => {
-                s.pos = [0.205, 0.798, 0.026];
                 s.normal = [1.0, 0.0, 0.0];
                 s.tangent = [0.0, 1.0, 0.0];
                 s.chip = Chip::Small;
+                if let Some(v) = find_phalanx_dorsal_point(prims, prim_bones, "LeftPinkyDist", 1.0) {
+                    s.pos = v;
+                } else {
+                    s.pos = [0.205, 0.785, 0.037];
+                }
             }
+            // 6. Фаланги правого мизинца: двухосевое центрирование по геометрическому центру тела фаланги
             "RightPinkyProx" => {
-                s.pos = [-0.205, 0.846, 0.026];
                 s.normal = [-1.0, 0.0, 0.0];
                 s.tangent = [0.0, 1.0, 0.0];
                 s.chip = Chip::Small;
+                if let Some(v) = find_phalanx_dorsal_point(prims, prim_bones, "RightPinkyProx", -1.0) {
+                    s.pos = v;
+                } else {
+                    s.pos = [-0.205, 0.835, 0.037];
+                }
             }
             "RightPinkyMid" => {
-                s.pos = [-0.205, 0.822, 0.026];
                 s.normal = [-1.0, 0.0, 0.0];
                 s.tangent = [0.0, 1.0, 0.0];
                 s.chip = Chip::Small;
+                if let Some(v) = find_phalanx_dorsal_point(prims, prim_bones, "RightPinkyMid", -1.0) {
+                    s.pos = v;
+                } else {
+                    s.pos = [-0.205, 0.810, 0.037];
+                }
             }
             "RightPinkyDist" => {
-                s.pos = [-0.205, 0.798, 0.026];
                 s.normal = [-1.0, 0.0, 0.0];
                 s.tangent = [0.0, 1.0, 0.0];
                 s.chip = Chip::Small;
+                if let Some(v) = find_phalanx_dorsal_point(prims, prim_bones, "RightPinkyDist", -1.0) {
+                    s.pos = v;
+                } else {
+                    s.pos = [-0.205, 0.785, 0.037];
+                }
             }
             _ => {}
         }
@@ -286,7 +413,7 @@ pub fn build() -> Skeleton {
         build_fallback_sites(&prims, &prim_bones)
     };
 
-    sanitize_sensor_sites(&mut sites);
+    sanitize_sensor_sites(&prims, &prim_bones, &mut sites);
 
     let joints = if is_v3 && cursor < bytes.len() {
         let num_joints = read_u32(bytes, &mut cursor) as usize;
@@ -384,7 +511,7 @@ fn build_fallback_sites(prims: &[Prim], prim_bones: &[&'static str]) -> Vec<Sens
         })
         .collect();
 
-    sanitize_sensor_sites(&mut sites);
+    sanitize_sensor_sites(prims, prim_bones, &mut sites);
     sites
 }
 

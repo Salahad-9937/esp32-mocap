@@ -199,7 +199,6 @@ for obj in parts:
                 elif c.y <= -0.036: f_p = "Ring"
                 else: f_p = "Pinky"
 
-                # Калиброванные интервалы с учетом меньшей анатомической длины мизинца
                 if f_p == "Pinky":
                     if abs_x < 0.695: bone_tag = f"{side}PinkyProx"
                     elif abs_x < 0.720: bone_tag = f"{side}PinkyMid"
@@ -301,7 +300,7 @@ def pick_segment_center_surface(bone_tag, s_mult, mode, target_y=None):
     for (vx, vy, vz), (nx, ny, nz) in zip(all_v, all_n):
         y_dist = abs(vy - y_mid)
         center_weight = max(1.0 - (y_dist / y_span), 0.0)
-        x_center_penalty = abs(vx) * 8.0 # Штраф за смещение от сагиттальной оси симметрии
+        x_center_penalty = abs(vx) * 8.0
 
         if mode == 'occiput':
             n_dot = -nz if (vy > 1.58 and abs(vx) < 0.035) else -99.0
@@ -384,9 +383,9 @@ for side in ["Left", "Right"]:
         (f"{side}RingMid", s_name, 2, f"{side}RingMid", 'lat', sm, (0.0, 1.0, 0.0), None),
         (f"{side}RingDist", s_name, 2, f"{side}RingDist", 'lat', sm, (0.0, 1.0, 0.0), None),
 
-        (f"{side}PinkyProx", s_name, 2, f"{side}PinkyProx", 'lat', sm, (0.0, 1.0, 0.0), 0.848),
-        (f"{side}PinkyMid", s_name, 2, f"{side}PinkyMid", 'lat', sm, (0.0, 1.0, 0.0), 0.822),
-        (f"{side}PinkyDist", s_name, 2, f"{side}PinkyDist", 'lat', sm, (0.0, 1.0, 0.0), 0.798),
+        (f"{side}PinkyProx", s_name, 2, f"{side}PinkyProx", 'lat', sm, (0.0, 1.0, 0.0), 0.835),
+        (f"{side}PinkyMid", s_name, 2, f"{side}PinkyMid", 'lat', sm, (0.0, 1.0, 0.0), 0.810),
+        (f"{side}PinkyDist", s_name, 2, f"{side}PinkyDist", 'lat', sm, (0.0, 1.0, 0.0), 0.785),
 
         (f"{side}ThighProx", s_name, 0, f"{side}ThighDist", 'lat_upper', sm, (0.0, 1.0, 0.0), None),
         (f"{side}ThighDist", s_name, 0, f"{side}ThighDist", 'lat_lower', sm, (0.0, 1.0, 0.0), None),
