@@ -24,7 +24,7 @@ pub enum MannequinPose {
     TPose,
 }
 
-/// Дескриптор сенсорной площадки с жесткой недеформируемой 3D-шайбой толщиной 2 мм
+/// Дескриптор сенсорной площадки с конформной геометрией
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlacedChip {
     pub id: usize,
@@ -181,7 +181,7 @@ pub fn fit_tangent(hint: V3, n: V3) -> V3 {
     norm(cross(n, [1.0, 0.0, 0.0]))
 }
 
-/// Формирует жесткую плоскую шайбу с локализованной посадкой на поверхность меша.
+/// Формирует конформную сенсорную площадку, повторяющую геометрию поверхности под собой.
 #[must_use]
 pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
     let site = &skeleton().sites[id];
@@ -206,11 +206,8 @@ pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
     }
 
     let n = norm(normal);
-    let u = fit_tangent(tangent, n);
-    let v = norm(cross(n, u));
-    let r = site.chip.half();
 
-    // 1. Поиск локальной поверхности в узком окне (не более 16 мм, исключая захват соседних конечностей)
+    // 1. Поиск центрального контакта с поверхностью меша
     let mut center_surf = {
         let ray_o = madd(pos, n, 0.008);
         let ray_d = scale(n, -1.0);
@@ -225,15 +222,47 @@ pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
         }
     };
 
-    // Инвариант: датчики осевого скелета жестко сохраняют координату X = 0.0 без горизонтального дрейфа
+    // Осевые датчики строго удерживают сагиттальную координату X = 0.0
     if pos[0].abs() < 1e-4 {
         center_surf[0] = 0.0;
     }
 
+    let u = fit_tangent(tangent, n);
+    let v = norm(cross(n, u));
+    let r = site.chip.half();
+
     let c_top = madd(center_surf, n, BASE_LIFT + THICKNESS);
     let c_bot = madd(center_surf, n, BASE_LIFT);
 
-    // 2. Генерация жесткой недеформируемой цилиндрической геометрии
+    // 2. Радиальное проецирование основания метки на криволинейную поверхность меша
+    let mut p_bot_pts = [c_bot; SECTORS];
+    let mut p_top_pts = [c_top; SECTORS];
+
+    for i in 0..SECTORS {
+        let angle = (i as f32) * (std::f32::consts::TAU / SECTORS as f32);
+        let (sa, ca) = angle.sin_cos();
+        let radial = norm(add(scale(u, ca), scale(v, sa)));
+        let p_planar = madd(center_surf, radial, r);
+
+        // Локальное зондирование поверхности под каждой вершиной окружности
+        let ray_o = madd(p_planar, n, 0.006);
+        let ray_d = scale(n, -1.0);
+
+        let bot_pt = if let Some(hit) = raycast(ray_o, ray_d, 0.012) {
+            if dot(hit.normal, n) > 0.15 {
+                madd(hit.pos, n, BASE_LIFT)
+            } else {
+                madd(p_planar, n, BASE_LIFT)
+            }
+        } else {
+            madd(p_planar, n, BASE_LIFT)
+        };
+
+        p_bot_pts[i] = bot_pt;
+        p_top_pts[i] = madd(bot_pt, n, THICKNESS);
+    }
+
+    // 3. Формирование конформной 3D-сетки датчика
     let mut vertices = Vec::with_capacity(66);
     let mut normals = Vec::with_capacity(66);
     let mut indices = Vec::with_capacity(192);
@@ -241,12 +270,8 @@ pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
     // Верхняя крышка
     vertices.push(c_top);
     normals.push(n);
-    for i in 0..SECTORS {
-        let angle = (i as f32) * (std::f32::consts::TAU / SECTORS as f32);
-        let (sa, ca) = angle.sin_cos();
-        let radial = norm(add(scale(u, ca), scale(v, sa)));
-        let p = madd(c_top, radial, r);
-        vertices.push(p);
+    for pt in &p_top_pts {
+        vertices.push(*pt);
         normals.push(n);
     }
     for i in 0..SECTORS {
@@ -254,18 +279,16 @@ pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
         indices.extend([0, (1 + i) as u32, (1 + next) as u32]);
     }
 
-    // Боковая обечайка (высота 2 мм)
+    // Боковая обечайка
     let side_base = vertices.len() as u32;
     for i in 0..SECTORS {
         let angle = (i as f32) * (std::f32::consts::TAU / SECTORS as f32);
         let (sa, ca) = angle.sin_cos();
         let radial = norm(add(scale(u, ca), scale(v, sa)));
-        let p_top = madd(c_top, radial, r);
-        let p_bot = madd(c_bot, radial, r);
 
-        vertices.push(p_top);
+        vertices.push(p_top_pts[i]);
         normals.push(radial);
-        vertices.push(p_bot);
+        vertices.push(p_bot_pts[i]);
         normals.push(radial);
     }
     for i in 0..SECTORS {
@@ -281,12 +304,8 @@ pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
     let bot_base = vertices.len() as u32;
     vertices.push(c_bot);
     normals.push(scale(n, -1.0));
-    for i in 0..SECTORS {
-        let angle = (i as f32) * (std::f32::consts::TAU / SECTORS as f32);
-        let (sa, ca) = angle.sin_cos();
-        let radial = norm(add(scale(u, ca), scale(v, sa)));
-        let p = madd(c_bot, radial, r);
-        vertices.push(p);
+    for pt in &p_bot_pts {
+        vertices.push(*pt);
         normals.push(scale(n, -1.0));
     }
     for i in 0..SECTORS {
@@ -300,7 +319,7 @@ pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
     for k in 0..8 {
         let idx = (k * 2) % SECTORS;
         let target = if k < 4 { k } else { k + 1 };
-        patch[target] = vertices[1 + idx];
+        patch[target] = p_top_pts[idx];
     }
 
     PlacedChip {

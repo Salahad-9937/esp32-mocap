@@ -155,7 +155,14 @@ fn find_bone_surface_point(
                         + (v[1] - center[1]) * normal_dir[1]
                         + (v[2] - center[2]) * normal_dir[2];
 
-                    let score = ext * 12.0 + dot_n * 4.0 + y_weight * 5.0;
+                    // Удержание точки на центральном гребне (Z = center_z) для латеральных звеньев
+                    let z_pen = if normal_dir[2].abs() < 0.15 {
+                        (v[2] - center[2]).abs() * 15.0
+                    } else {
+                        0.0
+                    };
+
+                    let score = ext * 12.0 + dot_n * 4.0 + y_weight * 5.0 - z_pen;
                     if score > best_score {
                         best_score = score;
                         best_v = Some(v);
@@ -308,7 +315,7 @@ fn find_foot_surface_point(
                     let x_dist = (v[0] - x_mid).abs();
                     let z_dist = (v[2] - target_z).abs();
 
-                    // Жесткий штраф за боковое смещение (X), исключающий снос на большой палец
+                    // Штраф за боковое смещение (X), исключающий снос на большой палец
                     let score = v[1] * 12.0 + n[1] * 6.0 - x_dist * 90.0 - z_dist * 30.0;
                     if score > best_score {
                         best_score = score;
