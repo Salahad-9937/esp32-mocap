@@ -1,6 +1,5 @@
 //! Модуль-фасад 3D-визуализации.
 
-pub mod axes;
 pub mod draw;
 pub mod interact;
 pub mod placement;

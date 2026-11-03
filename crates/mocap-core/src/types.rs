@@ -22,6 +22,22 @@ impl Vector3 {
 
     #[inline]
     #[must_use]
+    pub fn from_f32(v: [f32; 3]) -> Self {
+        Self {
+            x: v[0] as f64,
+            y: v[1] as f64,
+            z: v[2] as f64,
+        }
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn to_f32(self) -> [f32; 3] {
+        [self.x as f32, self.y as f32, self.z as f32]
+    }
+
+    #[inline]
+    #[must_use]
     pub fn length_squared(self) -> f64 {
         self.x * self.x + self.y * self.y + self.z * self.z
     }
@@ -127,6 +143,34 @@ impl Quaternion {
     pub fn to_f32_array(self) -> [f32; 4] {
         [self.w as f32, self.x as f32, self.y as f32, self.z as f32]
     }
+
+    #[inline]
+    #[must_use]
+    pub fn rotate_vector(&self, v: Vector3) -> Vector3 {
+        let q_vec = Vector3::new(self.x, self.y, self.z);
+        let t = q_vec.cross(v) * 2.0;
+        v + (t * self.w) + q_vec.cross(t)
+    }
+}
+
+/// Поворачивает трехмерный вектор f32 единичным кватернионом [w, x, y, z] по формуле Родрига.
+#[inline]
+#[must_use]
+pub fn rotate_vector_f32(v: [f32; 3], q: [f32; 4]) -> [f32; 3] {
+    let q_xyz = [q[1], q[2], q[3]];
+    let tx = 2.0 * (q_xyz[1] * v[2] - q_xyz[2] * v[1]);
+    let ty = 2.0 * (q_xyz[2] * v[0] - q_xyz[0] * v[2]);
+    let tz = 2.0 * (q_xyz[0] * v[1] - q_xyz[1] * v[0]);
+
+    let cx = q_xyz[1] * tz - q_xyz[2] * ty;
+    let cy = q_xyz[2] * tx - q_xyz[0] * tz;
+    let cz = q_xyz[0] * ty - q_xyz[1] * tx;
+
+    [
+        v[0] + q[0] * tx + cx,
+        v[1] + q[0] * ty + cy,
+        v[2] + q[0] * tz + cz,
+    ]
 }
 
 impl Mul for Quaternion {

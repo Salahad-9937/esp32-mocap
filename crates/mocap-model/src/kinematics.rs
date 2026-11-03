@@ -1,16 +1,11 @@
 //! # Процессор прямой кинематики анатомического скелета (`kinematics`)
 
-use super::math::{add, cross, norm, scale, sub, V3};
+use super::math::{add, sub, V3};
+use mocap_core::types::rotate_vector_f32;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-#[inline]
-#[must_use]
-pub fn rotate_vec_by_quat(v: V3, q: [f32; 4]) -> V3 {
-    let q_xyz = [q[1], q[2], q[3]];
-    let t = scale(cross(q_xyz, v), 2.0);
-    add(v, add(scale(t, q[0]), cross(q_xyz, t)))
-}
+pub use mocap_core::types::rotate_vector_f32 as rotate_vec_by_quat;
 
 /// Узел сегмента скелета с явным анатомическим суставом вращения.
 #[derive(Debug, Clone)]
@@ -33,13 +28,13 @@ impl BoneTransform {
     #[must_use]
     pub fn transform_point(&self, p: V3) -> V3 {
         let local_p = sub(p, self.rest_joint);
-        add(self.world_joint, rotate_vec_by_quat(local_p, self.world_rot))
+        add(self.world_joint, rotate_vector_f32(local_p, self.world_rot))
     }
 
     #[inline]
     #[must_use]
     pub fn transform_normal(&self, n: V3) -> V3 {
-        norm(rotate_vec_by_quat(n, self.world_rot))
+        rotate_vector_f32(n, self.world_rot)
     }
 }
 
@@ -170,7 +165,7 @@ impl KinematicTree {
             Some(p_tag) => {
                 let p_tf = self.evaluate_bone(p_tag, orientations, transforms);
                 let delta_rest = sub(b.rest_joint, p_tf.rest_joint);
-                let delta_world = rotate_vec_by_quat(delta_rest, p_tf.world_rot);
+                let delta_world = rotate_vector_f32(delta_rest, p_tf.world_rot);
                 let world_joint = add(p_tf.world_joint, delta_world);
                 let world_rot = local_measured_q.unwrap_or(p_tf.world_rot);
 

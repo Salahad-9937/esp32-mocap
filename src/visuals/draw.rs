@@ -3,12 +3,12 @@
 pub mod geometry;
 pub mod pipeline;
 
-use super::axes::rotate_vector_by_quat;
 use super::placement::{self, PlacedChip};
 use super::viewport::OrbitalCamera;
 use eframe::egui_glow;
 use egui::{Color32, Painter, Rect, Stroke};
 use geometry::{add_cage_and_grid_lines, add_capsule_geo, add_sphere_geo, tone_rgba};
+use mocap_core::types::rotate_vector_f32;
 use mocap_model::kinematics::BoneTransform;
 use mocap_model::math::{add, cross, norm, sub, V3};
 use mocap_model::skeleton::{Prim, Skeleton};
@@ -191,7 +191,7 @@ pub fn draw_scene_3d(
                     ([0.0, 0.0, axis_len], [0.20, 0.50, 1.0, 1.0]),
                 ];
                 for (local, col) in axes {
-                    let rot = rotate_vector_by_quat(local, *quat);
+                    let rot = rotate_vector_f32(local, *quat);
                     let tip = add(chip_pos, rot);
                     let b = line_vertices.len() as u32;
                     line_vertices.push(GlVertex { pos: chip_pos, normal: [0.0, 1.0, 0.0], color: col, ao: 1.0 });

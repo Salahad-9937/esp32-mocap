@@ -22,7 +22,7 @@ pub use fusion::{
 pub use mapping::{HardwareChannel, MappingProfile};
 pub use protocol::{crc16_ccitt, RawFrame, RawNodeData, StreamFramer};
 pub use transport::{ByteStream, SerialTransport};
-pub use types::{ImuSample, Quaternion, Vector3};
+pub use types::{rotate_vector_f32, ImuSample, Quaternion, Vector3};
 
 #[cfg(target_os = "linux")]
 pub use transport::BtRfcommStream;

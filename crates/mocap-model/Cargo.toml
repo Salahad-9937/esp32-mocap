@@ -6,6 +6,7 @@ authors = ["Salahad"]
 description = "Headless biomechanical skeleton, mannequin geometry, sensor sites and spatial raycasting"
 
 [dependencies]
+mocap-core = { workspace = true }
 serde = { workspace = true }
 
 [lib]
