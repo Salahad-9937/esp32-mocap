@@ -58,6 +58,46 @@ fn read_v3(bytes: &[u8], cursor: &mut usize) -> V3 {
     [x, y, z]
 }
 
+fn resolve_joint_bone_tag(name: &str) -> &'static str {
+    match name {
+        n if n.contains("Pelvis") || n.contains("L5S1") => "Sacrum",
+        n if n.contains("L3L4") || n.contains("SpineL3") => "SpineL3",
+        n if n.contains("T12L1") || n.contains("SpineT11") => "SpineT11",
+        n if n.contains("T7T8") || n.contains("SpineT7") => "SpineT7",
+        n if n.contains("C7T1") || n.contains("SpineT3") => "SpineT3",
+        n if n.contains("C4C5") || n.contains("Neck") => "Neck",
+        n if n.contains("Occiput") || n.contains("C1C2") || n.contains("Head") => "Head",
+        n if n.contains("SC") || n.contains("Clavicle") => {
+            if n.starts_with("L.") || n.contains("Left") { "LeftClavicle" } else { "RightClavicle" }
+        }
+        n if n.contains("GH") || n.contains("Shoulder") => {
+            if n.starts_with("L.") || n.contains("Left") { "LeftShoulder" } else { "RightShoulder" }
+        }
+        n if n.contains("Elbow") => {
+            if n.starts_with("L.") || n.contains("Left") { "LeftForearmProx" } else { "RightForearmProx" }
+        }
+        n if n.contains("Wrist") => {
+            if n.starts_with("L.") || n.contains("Left") { "LeftHand" } else { "RightHand" }
+        }
+        n if n.contains("MCP") || n.contains("PIP") || n.contains("DIP") || n.contains("CMC") || n.contains("IP") => {
+            if n.starts_with("L.") || n.contains("Left") { "LeftHand" } else { "RightHand" }
+        }
+        n if n.contains("Hip") => {
+            if n.starts_with("L.") || n.contains("Left") { "LeftThighProx" } else { "RightThighProx" }
+        }
+        n if n.contains("Knee") => {
+            if n.starts_with("L.") || n.contains("Left") { "LeftShankProx" } else { "RightShankProx" }
+        }
+        n if n.contains("Ankle") || n.contains("Subtalar") => {
+            if n.starts_with("L.") || n.contains("Left") { "LeftFoot" } else { "RightFoot" }
+        }
+        n if n.contains("MTP") || n.contains("Toe") => {
+            if n.starts_with("L.") || n.contains("Left") { "LeftToe" } else { "RightToe" }
+        }
+        _ => "Sacrum",
+    }
+}
+
 /// Выполняет плоское чтение примитивов геометрии, сайтов и суставов из бинарного ресурса.
 #[must_use]
 pub fn load_raw_model() -> (Vec<Prim>, Vec<&'static str>, Vec<SensorSite>, Vec<Joint>) {
@@ -200,6 +240,7 @@ pub fn load_raw_model() -> (Vec<Prim>, Vec<&'static str>, Vec<SensorSite>, Vec<J
             let marker_r = read_f32(bytes, &mut cursor);
             let parent_raw = read_i32(bytes, &mut cursor);
             let parent = if parent_raw >= 0 { Some(parent_raw as usize) } else { None };
+            let target_bone = resolve_joint_bone_tag(&name_str);
 
             joints.push(Joint {
                 name: name_str.to_string(),
@@ -208,6 +249,7 @@ pub fn load_raw_model() -> (Vec<Prim>, Vec<&'static str>, Vec<SensorSite>, Vec<J
                 parent,
                 axis: None,
                 marker_r,
+                target_bone,
             });
         }
     }

@@ -5,13 +5,15 @@ pub mod pipeline;
 
 use super::placement::{self, PlacedChip};
 use super::viewport::OrbitalCamera;
+use crate::app::ActiveTab;
+use crate::state::NodeTelemetry;
 use eframe::egui_glow;
 use egui::{Color32, Painter, Rect, Stroke};
 use geometry::{add_cage_and_grid_lines, add_capsule_geo, add_sphere_geo, tone_rgba};
 use mocap_core::types::rotate_vector_f32;
-use mocap_model::kinematics::BoneTransform;
+use mocap_model::kinematics::{kinematic_tree, BoneTransform};
 use mocap_model::math::{add, cross, norm, sub, V3};
-use mocap_model::skeleton::{Prim, Skeleton};
+use mocap_model::skeleton::{skeleton, Prim, Skeleton, SENSOR_COUNT};
 pub use pipeline::{GlSceneRenderer, GlVertex};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -34,43 +36,54 @@ fn transform_norm(n: V3, tf: Option<&BoneTransform>) -> V3 {
     }
 }
 
-fn joint_bone_tag(name: &str) -> &'static str {
-    match name {
-        n if n.contains("Pelvis") || n.contains("L5S1") => "Sacrum",
-        n if n.contains("L3L4") || n.contains("SpineL3") => "SpineL3",
-        n if n.contains("T12L1") || n.contains("SpineT11") => "SpineT11",
-        n if n.contains("T7T8") || n.contains("SpineT7") => "SpineT7",
-        n if n.contains("C7T1") || n.contains("SpineT3") => "SpineT3",
-        n if n.contains("C4C5") || n.contains("Neck") => "Neck",
-        n if n.contains("Occiput") || n.contains("C1C2") || n.contains("Head") => "Head",
-        n if n.contains("SC") || n.contains("Clavicle") => {
-            if n.starts_with("L.") || n.contains("Left") { "LeftClavicle" } else { "RightClavicle" }
+fn active_quats(nodes: &[NodeTelemetry]) -> [Option<[f32; 4]>; SENSOR_COUNT] {
+    let mut out = [None; SENSOR_COUNT];
+    for site in &skeleton().sites {
+        let node = nodes.iter().find(|n| n.bone_tag.as_deref() == Some(site.tag));
+        out[site.id] = node.map(|n| n.orientation_quat);
+    }
+    out
+}
+
+/// Выполняет рендеринг сцены с поддержкой плавной анимации перехода N-поза <-> T-поза и живого захвата.
+pub fn render_3d_scene(
+    painter: &Painter,
+    camera: &OrbitalCamera,
+    rect: Rect,
+    nodes: &[NodeTelemetry],
+    active_tab: ActiveTab,
+) {
+    let chips = placement::chips();
+    let quats = active_quats(nodes);
+
+    if active_tab == ActiveTab::Tracking {
+        let mut orientations_map = HashMap::with_capacity(nodes.len());
+        for node in nodes {
+            if let Some(ref tag) = node.bone_tag {
+                orientations_map.insert(tag.as_str(), node.orientation_quat);
+            }
         }
-        n if n.contains("GH") || n.contains("Shoulder") => {
-            if n.starts_with("L.") || n.contains("Left") { "LeftShoulder" } else { "RightShoulder" }
+        let transforms = kinematic_tree().evaluate(&orientations_map);
+        draw_scene_3d(painter, camera, rect, skeleton(), &chips, &quats, Some(&transforms));
+    } else {
+        let blend = placement::pose_blend();
+        if blend > 1e-4 {
+            let t = blend * blend * (3.0 - 2.0 * blend);
+            let angle_rad = (87.0_f32).to_radians() * t;
+            let (s, c) = (angle_rad * 0.5).sin_cos();
+
+            let q_left = [c, 0.0, 0.0, s];
+            let q_right = [c, 0.0, 0.0, -s];
+
+            let mut orientations_map = HashMap::with_capacity(2);
+            orientations_map.insert("LeftShoulder", q_left);
+            orientations_map.insert("RightShoulder", q_right);
+
+            let transforms = kinematic_tree().evaluate(&orientations_map);
+            draw_scene_3d(painter, camera, rect, skeleton(), &chips, &quats, Some(&transforms));
+        } else {
+            draw_scene_3d(painter, camera, rect, skeleton(), &chips, &quats, None);
         }
-        n if n.contains("Elbow") => {
-            if n.starts_with("L.") || n.contains("Left") { "LeftForearmProx" } else { "RightForearmProx" }
-        }
-        n if n.contains("Wrist") => {
-            if n.starts_with("L.") || n.contains("Left") { "LeftHand" } else { "RightHand" }
-        }
-        n if n.contains("MCP") || n.contains("PIP") || n.contains("DIP") || n.contains("CMC") || n.contains("IP") => {
-            if n.starts_with("L.") || n.contains("Left") { "LeftHand" } else { "RightHand" }
-        }
-        n if n.contains("Hip") => {
-            if n.starts_with("L.") || n.contains("Left") { "LeftThighProx" } else { "RightThighProx" }
-        }
-        n if n.contains("Knee") => {
-            if n.starts_with("L.") || n.contains("Left") { "LeftShankProx" } else { "RightShankProx" }
-        }
-        n if n.contains("Ankle") || n.contains("Subtalar") => {
-            if n.starts_with("L.") || n.contains("Left") { "LeftFoot" } else { "RightFoot" }
-        }
-        n if n.contains("MTP") || n.contains("Toe") => {
-            if n.starts_with("L.") || n.contains("Left") { "LeftToe" } else { "RightToe" }
-        }
-        _ => "Sacrum",
     }
 }
 
@@ -232,13 +245,13 @@ pub fn draw_scene_3d(
     let show_skel_lines = placement::show_skeleton();
     let show_joint_dots = placement::show_joints();
 
-    // 5. Отрисовка отладочного кинематического скелета (Biped Stick Skeleton)
+    // 5. Отрисовка отладочного кинематического каркаса без строкового сопоставления (O(1))
     if show_skel_lines {
         for j in &skel.joints {
             if let Some(parent_idx) = j.parent {
                 if let Some(parent_j) = skel.joints.get(parent_idx) {
-                    let p_tf = transforms.and_then(|t| t.get(joint_bone_tag(&parent_j.name)));
-                    let c_tf = transforms.and_then(|t| t.get(joint_bone_tag(&j.name)));
+                    let p_tf = transforms.and_then(|t| t.get(parent_j.target_bone));
+                    let c_tf = transforms.and_then(|t| t.get(j.target_bone));
 
                     let p_world = transform_v3(parent_j.pos, p_tf);
                     let c_world = transform_v3(j.pos, c_tf);
@@ -257,11 +270,10 @@ pub fn draw_scene_3d(
         }
     }
 
-    // 6. Отрисовка точечных маркеров сочленений с учетом глубины
+    // 6. Отрисовка точечных маркеров сочленений с прямой адресацией поля target_bone (O(1))
     if show_joint_dots {
         for j in &skel.joints {
-            let bone_tag = joint_bone_tag(&j.name);
-            let tf = transforms.and_then(|t| t.get(bone_tag));
+            let tf = transforms.and_then(|t| t.get(j.target_bone));
             let world_pos = transform_v3(j.pos, tf);
 
             if let Some((screen_pos, depth)) = camera.project_depth(world_pos, rect) {

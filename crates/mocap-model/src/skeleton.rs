@@ -74,6 +74,7 @@ pub struct Joint {
     pub parent: Option<usize>,
     pub axis: Option<V3>,
     pub marker_r: f32,
+    pub target_bone: &'static str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,7 +90,7 @@ impl Chip {
         match self {
             Chip::Large => 0.014,
             Chip::Medium => 0.010,
-            Chip::Small => 0.0044, // Радиус 4.4 мм (диаметр 8.8 мм) для идеальной посадки на узких фалангах мизинцев
+            Chip::Small => 0.0044,
         }
     }
 
