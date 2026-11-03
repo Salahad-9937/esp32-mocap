@@ -1,22 +1,21 @@
 //! # Интерактивный 3D-центричный конфигуратор привязки каналов (`mapper`)
 
+pub mod detector;
 pub mod groups;
 
 use crate::state::SharedStateHandle;
 use crate::visuals::placement;
+use detector::{DetectionEvent, KineticDetector};
 use egui::{Color32, Frame, Margin, ProgressBar, RichText, Stroke, TextWrapMode, Ui};
 use groups::{friendly_bone_name, ANATOMY_CLUSTERS};
 use mocap_core::mapping::MappingProfile;
 use std::collections::HashMap;
 use std::path::Path;
-use std::time::{Duration, Instant};
 
 pub struct MapperView {
     pub profile: MappingProfile,
     pub status_message: String,
-    pub detecting_for_bone: Option<String>,
-    pub detection_start: Option<Instant>,
-    pub accumulated_energies: HashMap<String, f32>,
+    pub detector: KineticDetector,
 }
 
 impl Default for MapperView {
@@ -24,9 +23,7 @@ impl Default for MapperView {
         Self {
             profile: MappingProfile::default(),
             status_message: String::new(),
-            detecting_for_bone: None,
-            detection_start: None,
-            accumulated_energies: HashMap::new(),
+            detector: KineticDetector::default(),
         }
     }
 }
@@ -55,14 +52,14 @@ impl MapperView {
         ui.label("Кликните на сегмент в 3D-сцене или выберите из списка ниже.");
         ui.add_space(4.0);
 
-        self.handle_dynamic_detection(&nodes, shared);
+        self.poll_detector(&nodes, shared);
         self.render_context_binding_card(ui, selected_tag.as_deref(), &nodes, shared);
 
         ui.add_space(8.0);
         self.render_active_hardware_list(ui, &nodes, selected_tag.as_deref(), shared);
 
         ui.add_space(8.0);
-        self.render_anatomical_tree(ui, selected_tag.as_deref(), &nodes, shared);
+        self.render_anatomical_tree(ui, selected_tag.as_deref());
 
         ui.add_space(10.0);
         ui.horizontal(|ui| {
@@ -84,41 +81,20 @@ impl MapperView {
         });
     }
 
-    fn handle_dynamic_detection(&mut self, nodes: &[crate::state::NodeTelemetry], shared: &SharedStateHandle) {
-        let Some(target_bone) = &self.detecting_for_bone else { return; };
-        let start = self.detection_start.get_or_insert_with(Instant::now);
-        let elapsed = start.elapsed();
-        let total_dur = Duration::from_secs(2);
-
-        for node in nodes {
-            let key = MappingProfile::channel_key(node.mux_address, node.channel, node.sensor_address);
-            *self.accumulated_energies.entry(key).or_default() += node.peak_energy;
-        }
-
-        if elapsed >= total_dur {
-            let mut best_channel = None;
-            let mut max_accum = 0.80f32;
-
-            for (key, &accum) in &self.accumulated_energies {
-                if accum > max_accum {
-                    max_accum = accum;
-                    best_channel = Some(key.clone());
+    fn poll_detector(&mut self, nodes: &[crate::state::NodeTelemetry], shared: &SharedStateHandle) {
+        if let Some(event) = self.detector.update(nodes) {
+            match event {
+                DetectionEvent::Detected { channel_key, target_bone } => {
+                    self.profile.mappings.insert(channel_key.clone(), target_bone.clone());
+                    self.status_message = format!("Успешно назначен узел {channel_key} -> {target_bone}");
+                    if let Ok(mut prof) = shared.mapping.profile.lock() {
+                        *prof = self.profile.clone();
+                    }
+                }
+                DetectionEvent::NoMovement => {
+                    self.status_message = "Движение не обнаружено. Повторите попытку.".to_string();
                 }
             }
-
-            if let Some(ch) = best_channel {
-                self.profile.mappings.insert(ch.clone(), target_bone.clone());
-                self.status_message = format!("Успешно назначен узел {ch} -> {target_bone}");
-                if let Ok(mut prof) = shared.mapping.profile.lock() {
-                    *prof = self.profile.clone();
-                }
-            } else {
-                self.status_message = "Движение не обнаружено. Повторите попытку.".to_string();
-            }
-
-            self.detecting_for_bone = None;
-            self.detection_start = None;
-            self.accumulated_energies.clear();
         }
     }
 
@@ -160,17 +136,13 @@ impl MapperView {
                 });
 
                 ui.add_space(2.0);
-                if self.detecting_for_bone.as_deref() == Some(bone_tag) {
-                    let elapsed = self.detection_start.map_or(0.0, |s| s.elapsed().as_secs_f32());
-                    let progress = (elapsed / 2.0).clamp(0.0, 1.0);
+                if self.detector.target_bone() == Some(bone_tag) {
                     ui.colored_label(Color32::YELLOW, "Пошевелите этим сегментом...");
-                    ui.add(ProgressBar::new(progress).show_percentage());
+                    ui.add(ProgressBar::new(self.detector.progress()).show_percentage());
                 } else {
                     ui.horizontal(|ui| {
                         if ui.button(RichText::new("🎯 Засечь движение").strong()).clicked() {
-                            self.detecting_for_bone = Some(bone_tag.to_string());
-                            self.detection_start = Some(Instant::now());
-                            self.accumulated_energies.clear();
+                            self.detector.start(bone_tag);
                         }
 
                         ui.menu_button("Назначить вручную ▼", |ui| {
@@ -242,8 +214,6 @@ impl MapperView {
         &mut self,
         ui: &mut Ui,
         selected_bone: Option<&str>,
-        _nodes: &[crate::state::NodeTelemetry],
-        _shared: &SharedStateHandle,
     ) {
         ui.heading("Целевые сегменты скелета");
 
@@ -273,11 +243,11 @@ impl MapperView {
                                     ui.colored_label(Color32::GRAY, "—");
                                 }
 
-                                if self.detecting_for_bone.is_none() && ui.button("🎯").on_hover_text("Засечь движение для этой кости").clicked() {
+                                if self.detector.target_bone().is_none()
+                                    && ui.button("🎯").on_hover_text("Засечь движение для этой кости").clicked()
+                                {
                                     placement::select_by_tag(bone);
-                                    self.detecting_for_bone = Some(bone.to_string());
-                                    self.detection_start = Some(Instant::now());
-                                    self.accumulated_energies.clear();
+                                    self.detector.start(bone);
                                 }
                             });
                         });
