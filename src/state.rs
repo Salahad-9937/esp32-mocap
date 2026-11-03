@@ -1,4 +1,4 @@
-//! # Состояние пользовательской сессии UI и потокобезопасные буферы (`state`)
+//! # Состояние пользовательской сессии UI и доменные буферы (`state`)
 
 use mocap_core::calibration::NodeBias;
 use mocap_core::mapping::MappingProfile;
@@ -54,47 +54,88 @@ pub struct StreamStats {
     pub crc_errors: AtomicU64,
 }
 
-/// Совокупный снимок телеметрии и команд, разделяемый между потоками.
+/// Домен физического соединения и контроля радиоканала.
 #[derive(Debug)]
-pub struct SharedTelemetryState {
-    pub nodes: Mutex<Vec<NodeTelemetry>>,
-    pub detected_mux_mask: AtomicU8,
+pub struct ConnectionDomain {
+    pub status: Mutex<ConnectionStatus>,
     pub stats: StreamStats,
     pub is_running: AtomicBool,
     pub is_paused: AtomicBool,
     pub user_wants_connected: AtomicBool,
     pub auto_reconnect: AtomicBool,
     pub reconnect_interval_ms: AtomicU64,
-    pub calculated_fps: Mutex<f32>,
-    pub last_frame_instant: Mutex<Option<Instant>>,
-    pub connection_error: Mutex<Option<String>>,
-    pub request_calibration: AtomicBool,
-    pub request_npose_alignment: AtomicBool,
-    pub calibration_progress: Mutex<Option<f32>>,
-    pub active_biases: Mutex<Vec<NodeBias>>,
-    pub mapping_profile: Mutex<MappingProfile>,
 }
 
-impl Default for SharedTelemetryState {
+impl Default for ConnectionDomain {
     fn default() -> Self {
         Self {
-            nodes: Mutex::new(Vec::new()),
-            detected_mux_mask: AtomicU8::new(0),
+            status: Mutex::new(ConnectionStatus::Connecting),
             stats: StreamStats::default(),
-            is_running: AtomicBool::new(false),
+            is_running: AtomicBool::new(true),
             is_paused: AtomicBool::new(false),
             user_wants_connected: AtomicBool::new(true),
             auto_reconnect: AtomicBool::new(true),
-            reconnect_interval_ms: AtomicU64::new(2000),
-            calculated_fps: Mutex::new(0.0),
-            last_frame_instant: Mutex::new(None),
-            connection_error: Mutex::new(None),
-            request_calibration: AtomicBool::new(false),
-            request_npose_alignment: AtomicBool::new(false),
-            calibration_progress: Mutex::new(None),
-            active_biases: Mutex::new(Vec::new()),
-            mapping_profile: Mutex::new(MappingProfile::default()),
+            reconnect_interval_ms: AtomicU64::new(500),
         }
+    }
+}
+
+/// Домен входящей телеметрии и частотных характеристик.
+#[derive(Debug, Default)]
+pub struct TelemetryDomain {
+    pub nodes: Mutex<Vec<NodeTelemetry>>,
+    pub detected_mux_mask: AtomicU8,
+    pub calculated_fps: Mutex<f32>,
+    pub last_frame_instant: Mutex<Option<Instant>>,
+}
+
+/// Домен калибровочного автомата (ноль гироскопов и соосность N-позы).
+#[derive(Debug, Default)]
+pub struct CalibrationDomain {
+    pub request_calibration: AtomicBool,
+    pub request_npose_alignment: AtomicBool,
+    pub progress: Mutex<Option<f32>>,
+    pub active_biases: Mutex<Vec<NodeBias>>,
+}
+
+/// Домен профиля анатомической привязки каналов к скелету.
+#[derive(Debug, Default)]
+pub struct MappingDomain {
+    pub profile: Mutex<MappingProfile>,
+}
+
+/// Совокупное состояние сессии, разделяемое между потоками по доменным границам.
+#[derive(Debug, Default)]
+pub struct SharedTelemetryState {
+    pub connection: ConnectionDomain,
+    pub telemetry: TelemetryDomain,
+    pub calibration: CalibrationDomain,
+    pub mapping: MappingDomain,
+}
+
+impl SharedTelemetryState {
+    #[must_use]
+    pub fn connection_status(&self) -> ConnectionStatus {
+        self.connection
+            .status
+            .lock()
+            .map(|s| s.clone())
+            .unwrap_or(ConnectionStatus::Disconnected)
+    }
+
+    pub fn set_connection_status(&self, status: ConnectionStatus) {
+        if let Ok(mut lock) = self.connection.status.lock() {
+            *lock = status;
+        }
+    }
+
+    #[must_use]
+    pub fn snapshot_nodes(&self) -> Vec<NodeTelemetry> {
+        self.telemetry
+            .nodes
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_default()
     }
 }
 

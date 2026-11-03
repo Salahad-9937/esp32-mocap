@@ -48,7 +48,7 @@ impl MapperView {
     }
 
     pub fn show(&mut self, ui: &mut Ui, shared: &SharedStateHandle, profile_path: &Path) {
-        let nodes = shared.nodes.lock().map(|g| g.clone()).unwrap_or_default();
+        let nodes = shared.telemetry.nodes.lock().map(|g| g.clone()).unwrap_or_default();
         let selected_tag = placement::selected_tag().map(String::from);
 
         ui.heading("Маппинг датчиков на скелет");
@@ -73,7 +73,7 @@ impl MapperView {
             }
             if ui.button("📂 Загрузить").clicked() {
                 self.load_profile(profile_path);
-                if let Ok(mut prof) = shared.mapping_profile.lock() {
+                if let Ok(mut prof) = shared.mapping.profile.lock() {
                     *prof = self.profile.clone();
                 }
                 self.status_message = "Профиль загружен.".to_string();
@@ -109,7 +109,7 @@ impl MapperView {
             if let Some(ch) = best_channel {
                 self.profile.mappings.insert(ch.clone(), target_bone.clone());
                 self.status_message = format!("Успешно назначен узел {ch} -> {target_bone}");
-                if let Ok(mut prof) = shared.mapping_profile.lock() {
+                if let Ok(mut prof) = shared.mapping.profile.lock() {
                     *prof = self.profile.clone();
                 }
             } else {
@@ -150,7 +150,7 @@ impl MapperView {
                         ui.colored_label(Color32::GREEN, RichText::new(key).monospace().strong());
                         if ui.button("Снять привязку").clicked() {
                             self.profile.mappings.remove(key);
-                            if let Ok(mut prof) = shared.mapping_profile.lock() {
+                            if let Ok(mut prof) = shared.mapping.profile.lock() {
                                 *prof = self.profile.clone();
                             }
                         }
@@ -180,7 +180,7 @@ impl MapperView {
                                     let btn_text = format!("{key} (Энергия: {:.1})", node.peak_energy);
                                     if ui.button(btn_text).clicked() {
                                         self.profile.set_mapping(node.mux_address, node.channel, node.sensor_address, bone_tag);
-                                        if let Ok(mut prof) = shared.mapping_profile.lock() {
+                                        if let Ok(mut prof) = shared.mapping.profile.lock() {
                                             *prof = self.profile.clone();
                                         }
                                         ui.close_menu();
@@ -228,7 +228,7 @@ impl MapperView {
                         if let Some(target_tag) = selected_bone {
                             if current_bone.as_deref() != Some(target_tag) && ui.button("Привязать к цели").clicked() {
                                 self.profile.set_mapping(node.mux_address, node.channel, node.sensor_address, target_tag);
-                                if let Ok(mut prof) = shared.mapping_profile.lock() {
+                                if let Ok(mut prof) = shared.mapping.profile.lock() {
                                     *prof = self.profile.clone();
                                 }
                             }

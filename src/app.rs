@@ -6,7 +6,6 @@ use crate::state::{ConnectionStatus, SharedStateHandle, SharedTelemetryState};
 use crate::views::{CalibrationView, MapperView, TopologyView, TrackingView};
 use crate::visuals::{placement, render_3d_scene, OrbitalCamera};
 use egui::{Color32, Frame, Margin, RichText, Stroke, TextWrapMode, Visuals};
-use mocap_core::mapping::MappingProfile;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -24,7 +23,6 @@ pub struct MocapApp {
     pub config: AppConfig,
     pub config_path: PathBuf,
     pub shared: SharedStateHandle,
-    pub connection_status: ConnectionStatus,
     pub active_tab: ActiveTab,
     pub camera: OrbitalCamera,
     pub topology_view: TopologyView,
@@ -38,15 +36,15 @@ impl MocapApp {
     pub fn new(_cc: &eframe::CreationContext<'_>, config: AppConfig, config_path: PathBuf) -> Self {
         let shared = Arc::new(SharedTelemetryState::default());
 
-        shared.is_running.store(true, Ordering::SeqCst);
-        shared.user_wants_connected.store(true, Ordering::SeqCst);
-        shared.auto_reconnect.store(config.auto_reconnect, Ordering::SeqCst);
-        shared.reconnect_interval_ms.store(500, Ordering::SeqCst);
+        shared.connection.is_running.store(true, Ordering::SeqCst);
+        shared.connection.user_wants_connected.store(true, Ordering::SeqCst);
+        shared.connection.auto_reconnect.store(config.auto_reconnect, Ordering::SeqCst);
+        shared.connection.reconnect_interval_ms.store(500, Ordering::SeqCst);
 
         let mut mapper_view = MapperView::default();
         mapper_view.load_profile(&config.mapping_profile_path);
 
-        if let Ok(mut prof) = shared.mapping_profile.lock() {
+        if let Ok(mut prof) = shared.mapping.profile.lock() {
             *prof = mapper_view.profile.clone();
         }
 
@@ -60,63 +58,12 @@ impl MocapApp {
             config,
             config_path,
             shared,
-            connection_status: ConnectionStatus::Connecting,
             active_tab: ActiveTab::Topology,
             camera: OrbitalCamera::default(),
             topology_view: TopologyView::default(),
             mapper_view,
             calibration_view: CalibrationView::default(),
             tracking_view: TrackingView::default(),
-        }
-    }
-
-    fn update_connection_status(&mut self) {
-        let is_paused = self.shared.is_paused.load(Ordering::Relaxed);
-
-        if !is_paused {
-            if let Ok(inst_guard) = self.shared.last_frame_instant.lock() {
-                if let Some(instant) = *inst_guard {
-                    if instant.elapsed() > Duration::from_millis(500) {
-                        if let Ok(mut nodes_guard) = self.shared.nodes.lock() {
-                            nodes_guard.clear();
-                        }
-                        if let Ok(mut fps_guard) = self.shared.calculated_fps.lock() {
-                            *fps_guard = 0.0;
-                        }
-                        self.shared.detected_mux_mask.store(0, Ordering::Relaxed);
-                        if let Ok(mut err_guard) = self.shared.connection_error.lock() {
-                            if err_guard.is_none() || err_guard.as_deref() == Some("") {
-                                *err_guard = Some("Поиск устройства (таймаут данных)...".to_string());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        let fps = self.shared.calculated_fps.lock().map(|f| *f).unwrap_or(0.0);
-        let wants_connected = self.shared.user_wants_connected.load(Ordering::Relaxed);
-
-        if let Ok(err_guard) = self.shared.connection_error.lock() {
-            if !wants_connected {
-                self.connection_status = ConnectionStatus::Disconnected;
-            } else if is_paused && (fps > 0.0 || self.connection_status == ConnectionStatus::Connected || self.connection_status == ConnectionStatus::Paused) {
-                self.connection_status = ConnectionStatus::Paused;
-            } else if fps > 0.0 {
-                self.connection_status = ConnectionStatus::Connected;
-            } else if let Some(ref err_msg) = *err_guard {
-                if err_msg.starts_with("Поиск")
-                    || err_msg.starts_with("Ожидание")
-                    || err_msg.contains("таймаут")
-                    || err_msg.contains("отключилось")
-                {
-                    self.connection_status = ConnectionStatus::Connecting;
-                } else {
-                    self.connection_status = ConnectionStatus::Error(err_msg.clone());
-                }
-            } else {
-                self.connection_status = ConnectionStatus::Connecting;
-            }
         }
     }
 }
@@ -138,25 +85,7 @@ impl eframe::App for MocapApp {
             ..Visuals::dark()
         });
 
-        self.update_connection_status();
-
-        if let Ok(mut nodes_guard) = self.shared.nodes.lock() {
-            for node in nodes_guard.iter_mut() {
-                let key = MappingProfile::channel_key(node.mux_address, node.channel, node.sensor_address);
-                let target_bone = self.mapper_view.profile.mappings.get(&key).map(|s| s.as_str())
-                    .or_else(|| {
-                        if node.sensor_address == 0x68 {
-                            let legacy_key = format!("0x{:02X}:{}", node.mux_address, node.channel);
-                            self.mapper_view.profile.mappings.get(&legacy_key).map(|s| s.as_str())
-                        } else {
-                            None
-                        }
-                    });
-                if node.bone_tag.as_deref() != target_bone {
-                    node.bone_tag = target_bone.map(String::from);
-                }
-            }
-        }
+        let conn_status = self.shared.connection_status();
 
         egui::SidePanel::left("mocap_side_panel_static")
             .exact_width(425.0)
@@ -173,7 +102,7 @@ impl eframe::App for MocapApp {
                 ui.horizontal(|ui| {
                     ui.heading("ESP32 MoCap");
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let (status_text, status_color) = match &self.connection_status {
+                        let (status_text, status_color) = match &conn_status {
                             ConnectionStatus::Connected => ("ПОТОК АКТИВЕН", Color32::GREEN),
                             ConnectionStatus::Connecting => ("ОЖИДАНИЕ", Color32::YELLOW),
                             ConnectionStatus::Paused => ("ПАУЗА", Color32::KHAKI),
@@ -194,8 +123,8 @@ impl eframe::App for MocapApp {
                     ui.add_space(conn_offset);
                     let start_x = ui.cursor().min.x;
 
-                    let btn_text = match self.connection_status {
-                        ConnectionStatus::Connected | ConnectionStatus::Paused => "Отключиться",
+                    let btn_text = match conn_status {
+                        ConnectionStatus::Connected | ConnectionStatus::Paused | ConnectionStatus::Connecting => "Отключиться",
                         _ => "Подключиться",
                     };
 
@@ -208,35 +137,34 @@ impl eframe::App for MocapApp {
                     .min_size(egui::vec2(125.0, 28.0));
 
                     if ui.add(btn).clicked() {
-                        match self.connection_status {
+                        match conn_status {
                             ConnectionStatus::Connected | ConnectionStatus::Connecting | ConnectionStatus::Paused => {
-                                self.shared.user_wants_connected.store(false, Ordering::SeqCst);
-                                self.shared.is_paused.store(false, Ordering::SeqCst);
+                                self.shared.connection.user_wants_connected.store(false, Ordering::SeqCst);
+                                self.shared.connection.is_paused.store(false, Ordering::SeqCst);
+                                self.shared.set_connection_status(ConnectionStatus::Disconnected);
                             }
-                            _ => {
-                                self.shared.user_wants_connected.store(true, Ordering::SeqCst);
-                                self.shared.is_paused.store(false, Ordering::SeqCst);
-                                if let Ok(mut err_guard) = self.shared.connection_error.lock() {
-                                    *err_guard = None;
-                                }
+                            ConnectionStatus::Disconnected | ConnectionStatus::Error(_) => {
+                                self.shared.connection.user_wants_connected.store(true, Ordering::SeqCst);
+                                self.shared.connection.is_paused.store(false, Ordering::SeqCst);
+                                self.shared.set_connection_status(ConnectionStatus::Connecting);
                             }
                         }
                     }
 
                     ui.add_space(10.0);
 
-                    let mut auto_rec = self.shared.auto_reconnect.load(Ordering::Relaxed);
+                    let mut auto_rec = self.shared.connection.auto_reconnect.load(Ordering::Relaxed);
                     if ui.checkbox(&mut auto_rec, RichText::new("Авто-реконнект").size(13.5)).changed() {
-                        self.shared.auto_reconnect.store(auto_rec, Ordering::SeqCst);
+                        self.shared.connection.auto_reconnect.store(auto_rec, Ordering::SeqCst);
                         self.config.auto_reconnect = auto_rec;
                         let _ = self.config.save_to_file(&self.config_path);
                     }
 
-                    if self.connection_status == ConnectionStatus::Connected || self.connection_status == ConnectionStatus::Paused {
+                    if conn_status == ConnectionStatus::Connected || conn_status == ConnectionStatus::Paused {
                         ui.add_space(8.0);
-                        let mut paused = self.shared.is_paused.load(Ordering::Relaxed);
+                        let mut paused = self.shared.connection.is_paused.load(Ordering::Relaxed);
                         if ui.checkbox(&mut paused, RichText::new("Пауза").size(13.5)).changed() {
-                            self.shared.is_paused.store(paused, Ordering::SeqCst);
+                            self.shared.connection.is_paused.store(paused, Ordering::SeqCst);
                         }
                     }
 
@@ -304,11 +232,11 @@ impl eframe::App for MocapApp {
 
                 painter.rect_filled(response.rect, 0.0_f32, bg_color);
 
-                let nodes = self.shared.nodes.lock().map(|g| g.clone()).unwrap_or_default();
+                let nodes = self.shared.snapshot_nodes();
                 render_3d_scene(&painter, &self.camera, response.rect, &nodes, self.active_tab);
             });
 
-        if self.connection_status == ConnectionStatus::Connected {
+        if conn_status == ConnectionStatus::Connected {
             ctx.request_repaint_after(Duration::from_millis(14));
         }
     }

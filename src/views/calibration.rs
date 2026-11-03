@@ -15,9 +15,9 @@ impl CalibrationView {
         ui.label("Двухфазный регламент ISB: устранение дрейфа гироскопов и выравнивание соосности позы.");
         ui.add_space(4.0);
 
-        let is_running = shared.user_wants_connected.load(Ordering::Relaxed);
-        let progress_opt = shared.calibration_progress.lock().map(|p| *p).unwrap_or(None);
-        let biases = shared.active_biases.lock().map(|b| b.clone()).unwrap_or_default();
+        let is_running = shared.connection.user_wants_connected.load(Ordering::Relaxed);
+        let progress_opt = shared.calibration.progress.lock().map(|p| *p).unwrap_or(None);
+        let biases = shared.calibration.active_biases.lock().map(|b| b.clone()).unwrap_or_default();
 
         // ── Фаза 1: Статическая калибровка нуля гироскопов ──────────────────
         ui.group(|ui| {
@@ -35,7 +35,7 @@ impl CalibrationView {
                     egui::Button::new(RichText::new("▶ 1. ЗАПУСТИТЬ КАЛИБРОВКУ ПОКОЯ").strong()),
                 );
                 if btn.clicked() {
-                    shared.request_calibration.store(true, Ordering::SeqCst);
+                    shared.calibration.request_calibration.store(true, Ordering::SeqCst);
                     self.status_text = "Запрос сбора шума покоя отправлен в ядро.".to_string();
                 }
             }
@@ -55,7 +55,7 @@ impl CalibrationView {
                 egui::Button::new(RichText::new("🎯 2. ЗАФИКСИРОВАТЬ N-ПОЗУ (ВЫРАВНИВАНИЕ)").strong()),
             );
             if btn_npose.clicked() {
-                shared.request_npose_alignment.store(true, Ordering::SeqCst);
+                shared.calibration.request_npose_alignment.store(true, Ordering::SeqCst);
                 self.status_text = "Поза N-Pose зафиксирована. Кватернионы выравнивания применены к скелету.".to_string();
             }
         });

@@ -24,11 +24,11 @@ impl TopologyView {
         ui.label("Шина I2C: 8 коммутаторов PCA9548A × 8 подканалов × 2 адреса (0x68/0x69)");
         ui.add_space(4.0);
 
-        let active_nodes = shared.nodes.lock().map(|g| g.clone()).unwrap_or_default();
+        let active_nodes = shared.telemetry.nodes.lock().map(|g| g.clone()).unwrap_or_default();
         let total_active = active_nodes.len();
         let frame_size = 8 + total_active * 15;
-        let fps = shared.calculated_fps.lock().map(|f| *f).unwrap_or(0.0);
-        let mux_mask = shared.detected_mux_mask.load(Ordering::Relaxed);
+        let fps = shared.telemetry.calculated_fps.lock().map(|f| *f).unwrap_or(0.0);
+        let mux_mask = shared.telemetry.detected_mux_mask.load(Ordering::Relaxed);
 
         let count_0x68 = active_nodes.iter().filter(|n| n.sensor_address == 0x68).count();
         let count_0x69 = active_nodes.iter().filter(|n| n.sensor_address == 0x69).count();
@@ -72,7 +72,6 @@ impl TopologyView {
         ui.add_space(6.0);
         ui.heading("Коммутаторы шины (PCA9548A 0x70 .. 0x77)");
 
-        // Индикатор статуса обнаружения мультиплексоров, стилизованный аналогично датчикам
         let mux_bar_resp = ui.group(|ui| {
             ui.horizontal(|ui| {
                 for m in 0..8 {
@@ -176,7 +175,6 @@ impl TopologyView {
                         let mux_addr = 0x70 + m;
                         let mux_exists = (mux_mask & (1 << m)) != 0 || active_nodes.iter().any(|n| n.mux_address == mux_addr);
 
-                        // Отображение коммутатора в виде визуального статусного блока
                         let (m_bg, m_stroke, m_fg, m_stat) = if mux_exists {
                             (
                                 Color32::from_rgb(25, 95, 45),

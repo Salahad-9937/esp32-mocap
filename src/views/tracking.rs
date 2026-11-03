@@ -13,8 +13,8 @@ impl TrackingView {
         ui.label("В этом режиме манекен деформируется в реальном времени прямой кинематикой.");
         ui.add_space(4.0);
 
-        let nodes = shared.nodes.lock().map(|g| g.clone()).unwrap_or_default();
-        let fps = shared.calculated_fps.lock().map(|f| *f).unwrap_or(0.0);
+        let nodes = shared.telemetry.nodes.lock().map(|g| g.clone()).unwrap_or_default();
+        let fps = shared.telemetry.calculated_fps.lock().map(|f| *f).unwrap_or(0.0);
         let active_count = nodes.len();
         let mapped_count = nodes.iter().filter(|n| n.bone_tag.is_some()).count();
 
@@ -39,9 +39,9 @@ impl TrackingView {
             ui.label("Если манекен стоит криво относительно оператора, встаньте в N-позу и нажмите выравнивание:");
             ui.add_space(2.0);
 
-            let is_running = shared.user_wants_connected.load(Ordering::Relaxed);
+            let is_running = shared.connection.user_wants_connected.load(Ordering::Relaxed);
             if ui.add_enabled(is_running, egui::Button::new(RichText::new("🎯 СБРОСИТЬ В N-ПОЗУ").strong())).clicked() {
-                shared.request_npose_alignment.store(true, Ordering::SeqCst);
+                shared.calibration.request_npose_alignment.store(true, Ordering::SeqCst);
             }
         });
 
