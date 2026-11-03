@@ -4,19 +4,16 @@ use super::math::{add, cross, dist, dot, madd, norm, scale, sub, V3};
 use super::skeleton::{skeleton, Chip, SENSOR_COUNT};
 use super::surface::raycast;
 
-/// Толщина корпуса метки датчика (2 мм)
+/// Толщина корпуса метки датчика (2 мм).
 pub const THICKNESS: f32 = 0.002;
 
-/// Технологический отступ основания шайбы от полигонов меша (0.4 мм)
+/// Технологический отступ основания шайбы от полигонов меша (0.4 мм).
 pub const BASE_LIFT: f32 = 0.0004;
 
-/// Технологический зазор для обратной совместимости
-pub const LIFT: f32 = BASE_LIFT;
-
-/// Количество радиальных секторов круглой метки (16 секторов)
+/// Количество радиальных секторов круглой метки (16 секторов).
 pub const SECTORS: usize = 16;
 
-/// Целевая поза манекена
+/// Целевая поза манекена для визуализации.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MannequinPose {
     #[default]
@@ -24,7 +21,7 @@ pub enum MannequinPose {
     TPose,
 }
 
-/// Дескриптор сенсорной площадки с конформной геометрией
+/// Дескриптор сенсорной площадки с конформной геометрией основания.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlacedChip {
     pub id: usize,
@@ -40,7 +37,7 @@ pub struct PlacedChip {
     pub patch_n: [V3; 9],
 }
 
-/// Пользовательская поправка положения сенсора
+/// Пользовательская поправка положения сенсора.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CustomChipPlacement {
     pub pos: V3,
@@ -48,7 +45,7 @@ pub struct CustomChipPlacement {
     pub tangent: V3,
 }
 
-/// Автономный менеджер раскладки и конформного прилегания сенсорных плат
+/// Автономный менеджер раскладки и конформного прилегания сенсорных плат.
 pub struct SensorLayoutManager {
     defaults: Vec<PlacedChip>,
     chips: Vec<PlacedChip>,
@@ -207,7 +204,6 @@ pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
 
     let n = norm(normal);
 
-    // 1. Поиск центрального контакта с поверхностью меша
     let mut center_surf = {
         let ray_o = madd(pos, n, 0.008);
         let ray_d = scale(n, -1.0);
@@ -222,7 +218,6 @@ pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
         }
     };
 
-    // Осевые датчики строго удерживают сагиттальную координату X = 0.0
     if pos[0].abs() < 1e-4 {
         center_surf[0] = 0.0;
     }
@@ -234,7 +229,6 @@ pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
     let c_top = madd(center_surf, n, BASE_LIFT + THICKNESS);
     let c_bot = madd(center_surf, n, BASE_LIFT);
 
-    // 2. Радиальное проецирование основания метки на криволинейную поверхность меша
     let mut p_bot_pts = [c_bot; SECTORS];
     let mut p_top_pts = [c_top; SECTORS];
 
@@ -244,7 +238,6 @@ pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
         let radial = norm(add(scale(u, ca), scale(v, sa)));
         let p_planar = madd(center_surf, radial, r);
 
-        // Локальное зондирование поверхности под каждой вершиной окружности
         let ray_o = madd(p_planar, n, 0.006);
         let ray_d = scale(n, -1.0);
 
@@ -262,7 +255,6 @@ pub fn conform_chip(id: usize, pos: V3, normal: V3, tangent: V3) -> PlacedChip {
         p_top_pts[i] = madd(bot_pt, n, THICKNESS);
     }
 
-    // 3. Формирование конформной 3D-сетки датчика
     let mut vertices = Vec::with_capacity(66);
     let mut normals = Vec::with_capacity(66);
     let mut indices = Vec::with_capacity(192);
